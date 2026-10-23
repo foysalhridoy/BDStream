@@ -8,10 +8,10 @@ describe('SSRF Guard & URL Allowlist Protection', () => {
     expect(parsed.hostname).toBe('172.16.50.7');
   });
 
-  it('permits authorized ICC media host (10.16.100.244)', () => {
-    const validUrl = 'http://10.16.100.244/media/stream.mp4';
+  it('permits authorized DhakaFlix storage host (172.16.50.14)', () => {
+    const validUrl = 'http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/sample.mp4';
     const parsed = validateMediaUrl(validUrl);
-    expect(parsed.hostname).toBe('10.16.100.244');
+    expect(parsed.hostname).toBe('172.16.50.14');
   });
 
   it('blocks localhost and loopback addresses (127.0.0.1)', () => {

@@ -1,5 +1,4 @@
 import {
-  ISourceConnector,
   MediaItem,
   MediaItemDetails,
   PlaybackDescriptor,
@@ -16,7 +15,7 @@ interface CacheEntry {
   timestamp: number;
 }
 
-export class DhakaFlixConnector implements ISourceConnector {
+export class DhakaFlixConnector {
   public id = 'dhakaflix' as const;
   public name = 'DhakaFlix Portal';
   private baseUrl = config.DHAKAFLIX_BASE_URL;
@@ -38,30 +37,17 @@ export class DhakaFlixConnector implements ISourceConnector {
       clearTimeout(timeout);
       const latencyMs = Date.now() - startTime;
 
-      if (!res.ok) {
-        return {
-          id: this.id,
-          name: this.name,
-          baseUrl: this.baseUrl,
-          isAccessible: false,
-          latencyMs,
-          requiresSession: false,
-          itemCount: this.itemMap.size,
-          error: `HTTP ${res.status}: ${res.statusText}`,
-          message: 'DhakaFlix portal responded with an error.',
-          lastChecked: new Date().toISOString()
-        };
-      }
-
       return {
         id: this.id,
         name: this.name,
         baseUrl: this.baseUrl,
-        isAccessible: true,
+        isAccessible: res.ok,
         latencyMs,
         requiresSession: false,
         itemCount: this.itemMap.size,
-        message: 'Online and reachable on local network (172.16.50.4). Storage nodes ready.',
+        message: res.ok
+          ? 'Online & streaming on DhakaFlix (172.16.50.4)'
+          : `HTTP ${res.status}: ${res.statusText}`,
         lastChecked: new Date().toISOString()
       };
     } catch (err: unknown) {
@@ -73,23 +59,19 @@ export class DhakaFlixConnector implements ISourceConnector {
         latencyMs: Date.now() - startTime,
         requiresSession: false,
         itemCount: this.itemMap.size,
-        error: (err as Error).message || 'Connection timeout or network unreachable',
-        message: 'Cannot reach DhakaFlix. Ensure you are connected to the supported ISP network.',
+        error: (err as Error).message || 'Connection timeout',
+        message: 'Cannot reach DhakaFlix. Ensure you are on the ISP network.',
         lastChecked: new Date().toISOString()
       };
     }
   }
 
-  /**
-   * Get cached catalog or trigger background scan
-   */
   public async getCatalog(_options?: CatalogQueryOptions): Promise<MediaItem[]> {
     const now = Date.now();
     if (this.cache && (now - this.cache.timestamp) < config.CATALOG_CACHE_TTL * 1000) {
       return this.cache.items;
     }
 
-    // Refresh if empty or expired
     if (!this.isScanning) {
       await this.refreshCatalog();
     }
@@ -110,6 +92,7 @@ export class DhakaFlixConnector implements ISourceConnector {
       for (const item of items) {
         this.itemMap.set(item.id, item);
       }
+      console.log(`[DhakaFlix] Indexed ${items.length} titles with full banners & metadata.`);
     } catch (err) {
       console.error('[DhakaFlix] Catalog crawl failed:', err);
     } finally {
@@ -117,55 +100,65 @@ export class DhakaFlixConnector implements ISourceConnector {
     }
   }
 
-  /**
-   * Crawls categories and recent year directories
-   */
   private async crawlDhakaFlix(): Promise<MediaItem[]> {
     const discoveredItems: MediaItem[] = [];
 
-    // Verified category roots discovered during inspection
+    // Categories structured exactly as DhakaFlix organizes them
     const categoriesToScan = [
       {
         url: 'http://172.16.50.7/DHAKA-FLIX-7/English%20Movies/',
         category: 'English Movies',
         type: 'movie' as const,
-        recentSubdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
+        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/', '%282021%29/']
       },
       {
         url: 'http://172.16.50.14/DHAKA-FLIX-14/English%20Movies%20%281080p%29/',
-        category: 'English 1080p',
+        category: 'English Movies (1080p)',
         type: 'movie' as const,
-        recentSubdirs: ['%282024%29/', '%282023%29/']
+        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
       },
       {
         url: 'http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/',
         category: 'Hindi Movies',
         type: 'movie' as const,
-        recentSubdirs: ['%282024%29/', '%282023%29/']
+        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
       },
       {
         url: 'http://172.16.50.14/DHAKA-FLIX-14/SOUTH%20INDIAN%20MOVIES/South%20Movies/',
-        category: 'South Movies',
+        category: 'South Indian Movies',
         type: 'movie' as const,
-        recentSubdirs: ['%282024%29/', '%282023%29/']
+        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
+      },
+      {
+        url: 'http://172.16.50.14/DHAKA-FLIX-14/SOUTH%20INDIAN%20MOVIES/Hindi%20Dubbed/',
+        category: 'South (Hindi Dubbed)',
+        type: 'movie' as const,
+        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
       },
       {
         url: 'http://172.16.50.14/DHAKA-FLIX-14/Animation%20Movies/',
-        category: 'Animation',
+        category: 'Animation Movies',
         type: 'movie' as const,
-        recentSubdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
+        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
       },
       {
-        url: 'http://172.16.50.12/DHAKA-FLIX-12/TV-WEB-Series/',
-        category: 'TV Series',
+        url: 'http://172.16.50.7/DHAKA-FLIX-7/Kolkata%20Bangla%20Movies/',
+        category: 'Kolkata Bangla Movies',
+        type: 'movie' as const,
+        subdirs: ['']
+      },
+      {
+        url: 'http://172.16.50.14/DHAKA-FLIX-14/KOREAN%20TV%20%26%20WEB%20Series/',
+        category: 'Korean TV & Web Series',
         type: 'series' as const,
-        recentSubdirs: ['']
+        subdirs: ['']
       }
     ];
 
+    // Crawl standard movie categories
     for (const cat of categoriesToScan) {
       try {
-        for (const sub of cat.recentSubdirs) {
+        for (const sub of cat.subdirs) {
           const targetUrl = sub ? new URL(sub, cat.url).href : cat.url;
           validateMediaUrl(targetUrl);
 
@@ -183,16 +176,40 @@ export class DhakaFlixConnector implements ISourceConnector {
           discoveredItems.push(...parsed);
         }
       } catch (err) {
-        console.warn(`[DhakaFlix] Error crawling category ${cat.category}:`, (err as Error).message);
+        console.warn(`[DhakaFlix] Error crawling ${cat.category}:`, (err as Error).message);
+      }
+    }
+
+    // Crawl TV & Web Series with full alphabetical nesting (0-9, A-L, M-R, S-Z)
+    const tvSeriesBase = 'http://172.16.50.12/DHAKA-FLIX-12/TV-WEB-Series/';
+    const tvSubsections = [
+      'TV%20Series%20%E2%98%85%20%200%20%20%E2%80%94%20%209/',
+      'TV%20Series%20%E2%99%A5%20%20A%20%20%E2%80%94%20%20L/',
+      'TV%20Series%20%E2%99%A6%20%20M%20%20%E2%80%94%20%20R/',
+      'TV%20Series%20%E2%99%A6%20%20S%20%20%E2%80%94%20%20Z/'
+    ];
+
+    for (const sub of tvSubsections) {
+      try {
+        const secUrl = new URL(sub, tvSeriesBase).href;
+        validateMediaUrl(secUrl);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6000);
+        const res = await fetch(secUrl, { signal: controller.signal });
+        clearTimeout(timeout);
+
+        if (!res.ok) continue;
+        const html = await res.text();
+        const shows = this.parseH5aiLinks(html, secUrl, 'TV & Web Series', 'series');
+        discoveredItems.push(...shows);
+      } catch (err) {
+        console.warn('[DhakaFlix] TV series subsection crawl error:', (err as Error).message);
       }
     }
 
     return discoveredItems;
   }
 
-  /**
-   * Parse links in h5ai folder listing
-   */
   private parseH5aiLinks(html: string, parentUrl: string, category: string, type: 'movie' | 'series'): MediaItem[] {
     const items: MediaItem[] = [];
     const linkRegex = /href=["']([^"']+)["']/g;
@@ -200,7 +217,6 @@ export class DhakaFlixConnector implements ISourceConnector {
 
     while ((match = linkRegex.exec(html)) !== null) {
       const href = match[1];
-      // Skip h5ai internal links and parent dir
       if (
         href.startsWith('/_h5ai') ||
         href.startsWith('//') ||
@@ -212,17 +228,20 @@ export class DhakaFlixConnector implements ISourceConnector {
         continue;
       }
 
-      // Check if this is a directory/folder entry ending in /
       if (href.endsWith('/')) {
         const fullFolderUrl = new URL(href, parentUrl).href;
         const decodedPath = decodeURIComponent(href).replace(/\/$/, '');
         const folderName = decodedPath.split('/').pop() || '';
 
-        // Filter out non-media folders (like system folders)
-        if (!folderName || folderName.startsWith('.')) continue;
+        if (!folderName || folderName.startsWith('.') || folderName.includes('TV Series ★') || folderName.includes('TV Series ♥')) {
+          continue;
+        }
 
         const info = this.parseMediaTitle(folderName);
         const id = Buffer.from(`dhakaflix:${fullFolderUrl}`).toString('base64url');
+
+        // MUST SHOW BANNER: DhakaFlix stores a_AL_.jpg in every movie & series folder!
+        const posterUrl = `${fullFolderUrl}a_AL_.jpg`;
 
         items.push({
           id,
@@ -231,6 +250,7 @@ export class DhakaFlixConnector implements ISourceConnector {
           type,
           category,
           source: this.id,
+          posterUrl,
           folderUrl: fullFolderUrl,
           discoveredAt: new Date().toISOString(),
           qualityBadge: info.quality,
@@ -242,21 +262,13 @@ export class DhakaFlixConnector implements ISourceConnector {
     return items;
   }
 
-  /**
-   * Extracts clean title, year, and quality from standard release folder names
-   */
   private parseMediaTitle(folderName: string): { title: string; year?: number; quality?: string } {
-    // Examples:
-    // "Air (2023) 720p AMZN [Dual Audio]"
-    // "15 Cameras (2023) 720p WEBRip"
-    // "The Dark Knight 1080p BDRip"
     const qualityMatch = folderName.match(/(2160p|4k|1080p|720p|480p|HDRip|WEBRip|BDRip|DVDRip)/i);
     const quality = qualityMatch ? qualityMatch[1].toUpperCase() : undefined;
 
     const yearMatch = folderName.match(/\b(19\d{2}|20\d{2})\b/);
     const year = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
 
-    // Clean title by cutting off before year / quality / audio tags
     let title = folderName;
     if (year) {
       const idx = title.indexOf(year.toString());
@@ -267,9 +279,9 @@ export class DhakaFlixConnector implements ISourceConnector {
       title = title.substring(0, qualityMatch.index);
     }
 
-    // Clean brackets, dots, hyphens
     title = title
       .replace(/[._]/g, ' ')
+      .replace(/\(TV (?:Mini )?Series[^)]*\)/i, '')
       .replace(/[()[\]{}]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
@@ -279,37 +291,37 @@ export class DhakaFlixConnector implements ISourceConnector {
     return { title, year, quality };
   }
 
-  /**
-   * Deep inspect movie folder to find poster, video files, subtitles
-   */
   public async getItemDetails(itemId: string): Promise<MediaItemDetails> {
-    const item = this.itemMap.get(itemId);
+    let item = this.itemMap.get(itemId);
     if (!item) {
-      // Decode from itemId if not in map
       try {
         const decoded = Buffer.from(itemId, 'base64url').toString('utf8');
         const [source, folderUrl] = decoded.split(':', 2);
         if (source === 'dhakaflix' && folderUrl) {
           validateMediaUrl(folderUrl);
-          const info = this.parseMediaTitle(decodeURIComponent(folderUrl.replace(/\/$/, '').split('/').pop() || ''));
-          const createdItem: MediaItem = {
+          const folderName = decodeURIComponent(folderUrl.replace(/\/$/, '').split('/').pop() || '');
+          const info = this.parseMediaTitle(folderName);
+          item = {
             id: itemId,
             title: info.title,
             year: info.year,
-            type: 'movie',
+            type: folderUrl.includes('TV-WEB-Series') ? 'series' : 'movie',
             category: 'DhakaFlix Media',
             source: this.id,
+            posterUrl: `${folderUrl}a_AL_.jpg`,
             folderUrl,
             discoveredAt: new Date().toISOString(),
             qualityBadge: info.quality,
-            rawTitle: info.title
+            rawTitle: folderName
           };
-          this.itemMap.set(itemId, createdItem);
-          return this.inspectFolderDetails(createdItem);
+          this.itemMap.set(itemId, item);
         }
       } catch {
         throw new Error(`Media item not found: ${itemId}`);
       }
+    }
+
+    if (!item) {
       throw new Error(`Media item not found: ${itemId}`);
     }
 
@@ -333,6 +345,7 @@ export class DhakaFlixConnector implements ISourceConnector {
     const html = await res.text();
     const linkRegex = /href=["']([^"']+)["']/g;
     const files: string[] = [];
+    const subfolders: string[] = [];
     let match: RegExpExecArray | null;
 
     while ((match = linkRegex.exec(html)) !== null) {
@@ -347,24 +360,27 @@ export class DhakaFlixConnector implements ISourceConnector {
       ) {
         continue;
       }
-      files.push(href);
+      if (href.endsWith('/')) {
+        subfolders.push(href);
+      } else {
+        files.push(href);
+      }
     }
 
-    // Identify poster (.jpg, .png, .jpeg, .webp)
-    let posterUrl = item.posterUrl;
+    let posterUrl = item.posterUrl || `${item.folderUrl}a_AL_.jpg`;
     const posterFile = files.find(f => /\.(jpe?g|png|webp)$/i.test(f));
     if (posterFile) {
       posterUrl = new URL(posterFile, item.folderUrl).href;
     }
 
-    // Identify video files (.mp4, .mkv, .webm, .m4v, .ts)
+    // Direct video files in folder
     const videoFiles = files.filter(f => /\.(mp4|mkv|webm|m4v|ts)$/i.test(f));
-    const versions: MediaVersion[] = videoFiles.map(vf => {
+    let versions: MediaVersion[] = videoFiles.map(vf => {
       const fullUrl = new URL(vf, item.folderUrl).href;
       const isMkv = vf.toLowerCase().endsWith('.mkv');
       const isMp4 = vf.toLowerCase().endsWith('.mp4');
       const filename = decodeURIComponent(vf.split('/').pop() || vf);
-      const q = filename.match(/(2160p|4k|1080p|720p|480p)/i)?.[1]?.toUpperCase() || item.qualityBadge || 'Standard';
+      const q = filename.match(/(2160p|4k|1080p|720p|480p)/i)?.[1]?.toUpperCase() || item.qualityBadge || 'HD';
 
       return {
         id: Buffer.from(fullUrl).toString('base64url'),
@@ -375,37 +391,82 @@ export class DhakaFlixConnector implements ISourceConnector {
       };
     });
 
-    // Identify subtitles (.srt, .vtt)
+    // Subtitles
     const subFiles = files.filter(f => /\.(srt|vtt)$/i.test(f));
     const subtitles: SubtitleTrack[] = subFiles.map((sf, index) => {
       const fullSubUrl = new URL(sf, item.folderUrl).href;
       const subName = decodeURIComponent(sf.split('/').pop() || sf);
-      const isVtt = sf.toLowerCase().endsWith('.vtt');
       return {
         id: `sub-${index}`,
         label: subName.replace(/\.(srt|vtt)$/i, ''),
         language: 'English',
         url: fullSubUrl,
-        format: isVtt ? 'vtt' : 'srt'
+        format: sf.toLowerCase().endsWith('.vtt') ? 'vtt' : 'srt'
       };
     });
+
+    // If TV Series with Seasons (e.g. Season 1/, Season 2/)
+    const seasonFolders = subfolders.filter(sf => /season|series/i.test(decodeURIComponent(sf)));
+    let seasons: { seasonNumber: number; episodes: { episodeNumber: number; title: string; fileUrl: string; }[] }[] | undefined;
+
+    if (seasonFolders.length > 0) {
+      seasons = [];
+      for (let sIdx = 0; sIdx < seasonFolders.length; sIdx++) {
+        const sFolder = seasonFolders[sIdx];
+        const sUrl = new URL(sFolder, item.folderUrl).href;
+        const sName = decodeURIComponent(sFolder.replace(/\/$/, '').split('/').pop() || '');
+        const sNumMatch = sName.match(/\b(\d+)\b/);
+        const seasonNumber = sNumMatch ? parseInt(sNumMatch[1], 10) : sIdx + 1;
+
+        try {
+          const sRes = await fetch(sUrl);
+          if (sRes.ok) {
+            const sHtml = await sRes.text();
+            const sEpFiles = [...sHtml.matchAll(/href=["']([^"']+\.(mkv|mp4|webm))["']/gi)].map(m => m[1]);
+            const episodes = sEpFiles.map((epFile, epIdx) => {
+              const epUrl = new URL(epFile, sUrl).href;
+              const epName = decodeURIComponent(epFile.split('/').pop() || epFile);
+              return {
+                episodeNumber: epIdx + 1,
+                title: epName.replace(/\.(mkv|mp4|webm)$/i, ''),
+                fileUrl: epUrl
+              };
+            });
+
+            if (episodes.length > 0) {
+              seasons.push({ seasonNumber, episodes });
+              // Also add first episode to versions if versions was empty
+              if (versions.length === 0 && episodes.length > 0) {
+                versions = episodes.map(ep => ({
+                  id: Buffer.from(ep.fileUrl).toString('base64url'),
+                  name: `S${seasonNumber}E${ep.episodeNumber}: ${ep.title}`,
+                  quality: item.qualityBadge || '720P',
+                  fileUrl: ep.fileUrl,
+                  mimeType: ep.fileUrl.endsWith('.mp4') ? 'video/mp4' : 'video/x-matroska'
+                }));
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[DhakaFlix] Error scanning season:', (e as Error).message);
+        }
+      }
+    }
 
     return {
       ...item,
       posterUrl,
       versions,
       subtitles,
+      seasons,
       directPlaybackSupported: versions.length > 0
     };
   }
 
-  /**
-   * Resolves playable URL and verifies byte range support
-   */
   public async resolvePlayback(itemId: string, versionId?: string): Promise<PlaybackDescriptor> {
     const details = await this.getItemDetails(itemId);
     if (!details.versions.length) {
-      throw new Error('No playable video streams found in this media source directory.');
+      throw new Error('No playable video files found in this folder.');
     }
 
     let selectedVersion = details.versions[0];
@@ -416,7 +477,6 @@ export class DhakaFlixConnector implements ISourceConnector {
 
     validateMediaUrl(selectedVersion.fileUrl);
 
-    // Verify Range header support on media file
     let supportsRange = true;
     let sizeBytes: number | undefined;
     try {
@@ -427,11 +487,10 @@ export class DhakaFlixConnector implements ISourceConnector {
       supportsRange = headRes.status === 206 || headRes.headers.get('accept-ranges') === 'bytes';
       const cl = headRes.headers.get('content-range')?.split('/')?.[1] || headRes.headers.get('content-length');
       if (cl) sizeBytes = parseInt(cl, 10);
-    } catch (e) {
-      console.warn('[DhakaFlix] Range check probe warning:', (e as Error).message);
+    } catch {
+      // Ignore
     }
 
-    // Build the authorized backend streaming relay URL
     const relayStreamUrl = `/api/playback/stream?url=${encodeURIComponent(selectedVersion.fileUrl)}&source=dhakaflix`;
 
     return {

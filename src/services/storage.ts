@@ -9,8 +9,7 @@ const DEFAULT_SETTINGS: PlayerSettings = {
   autoplayNext: true,
   resumePlayback: true,
   subtitleSize: 'medium',
-  subtitleBackground: true,
-  iccSessionToken: ''
+  subtitleBackground: true
 };
 
 export const StorageService = {

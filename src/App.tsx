@@ -4,7 +4,6 @@ import { Footer } from './components/layout/Footer';
 import { HomePage } from './pages/HomePage';
 import { CatalogPage } from './pages/CatalogPage';
 import { WatchPage } from './pages/WatchPage';
-import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { MediaDetailsModal } from './components/catalog/MediaDetailsModal';
 import { MediaItem, SourceHealth, PlayerSettings } from './types/media';
@@ -88,7 +87,7 @@ export const App: React.FC = () => {
           <HomePage
             onSelectItem={(item) => setActiveItem(item)}
             onPlayDirect={handlePlayDirect}
-            onNavigateTab={handleNavigateTab}
+            onNavigateCategory={(cat) => handleNavigateTab('catalog', cat)}
             sourcesHealth={sourcesHealth}
           />
         )}
@@ -117,13 +116,6 @@ export const App: React.FC = () => {
             item={playingItem.item}
             versionId={playingItem.versionId}
             onBack={() => handleNavigateTab('catalog')}
-          />
-        )}
-
-        {currentTab === 'diagnostics' && (
-          <DiagnosticsPage
-            sourcesHealth={sourcesHealth}
-            onRefreshHealth={refreshHealth}
           />
         )}
 

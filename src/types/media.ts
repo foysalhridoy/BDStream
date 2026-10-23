@@ -1,4 +1,4 @@
-export type SourceId = 'dhakaflix' | 'icc';
+export type SourceId = 'dhakaflix';
 export type MediaType = 'movie' | 'series';
 
 export interface MediaItem {
@@ -70,7 +70,6 @@ export interface SourceHealth {
   isAccessible: boolean;
   latencyMs: number;
   requiresSession: boolean;
-  sessionValid?: boolean;
   itemCount: number;
   error?: string;
   message: string;
@@ -95,5 +94,4 @@ export interface PlayerSettings {
   resumePlayback: boolean;
   subtitleSize: 'small' | 'medium' | 'large';
   subtitleBackground: boolean;
-  iccSessionToken?: string;
 }

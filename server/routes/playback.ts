@@ -167,18 +167,48 @@ playbackRouter.get('/proxy-asset', async (req: Request, res: Response) => {
       headers: { 'Accept': '*/*' }
     });
 
-    if (!upstreamRes.ok) {
-      res.status(upstreamRes.status).send('Asset not available');
+    let activeRes = upstreamRes;
+    let finalAssetUrl = assetUrl;
+
+    if (!activeRes.ok && /\.(jpe?g|png|webp)$/i.test(assetUrl)) {
+      // Try alternate poster name conventions common on DhakaFlix
+      const lastSlashIdx = assetUrl.lastIndexOf('/');
+      if (lastSlashIdx !== -1) {
+        const folderBase = assetUrl.substring(0, lastSlashIdx + 1);
+        const candidates = ['a._V1_.jpg', 'a_V1_.jpg', 'a._AL_.jpg', 'a_AL_.jpg', 'poster.jpg', 'cover.jpg'];
+        for (const candidate of candidates) {
+          const testUrl = `${folderBase}${candidate}`;
+          if (testUrl === assetUrl) continue;
+          try {
+            validateMediaUrl(testUrl);
+            const tryRes = await fetch(testUrl, {
+              signal: controller.signal,
+              headers: { 'Accept': '*/*' }
+            });
+            if (tryRes.ok) {
+              activeRes = tryRes;
+              finalAssetUrl = testUrl;
+              break;
+            }
+          } catch {
+            // Continue testing
+          }
+        }
+      }
+    }
+
+    if (!activeRes.ok) {
+      res.status(activeRes.status).send('Asset not available');
       return;
     }
 
-    const contentType = inferMimeType(assetUrl, upstreamRes.headers.get('content-type'));
+    const contentType = inferMimeType(finalAssetUrl, activeRes.headers.get('content-type'));
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    if (upstreamRes.body) {
-      const nodeStream = Readable.fromWeb(upstreamRes.body as import('stream/web').ReadableStream);
+    if (activeRes.body) {
+      const nodeStream = Readable.fromWeb(activeRes.body as import('stream/web').ReadableStream);
       nodeStream.on('error', () => {
         // Ignore client abort
       });

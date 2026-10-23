@@ -1,53 +1,33 @@
 import { DhakaFlixConnector } from './dhakaflix.js';
-import { ICCConnector } from './icc.js';
 import {
   CatalogQueryOptions,
   CatalogResult,
   MediaItem,
   MediaItemDetails,
   PlaybackDescriptor,
-  SourceHealth,
-  SourceId
+  SourceHealth
 } from './types.js';
 
 export class SourceRegistry {
   private dhakaflix: DhakaFlixConnector;
-  private icc: ICCConnector;
 
   constructor() {
     this.dhakaflix = new DhakaFlixConnector();
-    this.icc = new ICCConnector();
   }
 
   public getDhakaFlix(): DhakaFlixConnector {
     return this.dhakaflix;
   }
 
-  public getICC(): ICCConnector {
-    return this.icc;
-  }
-
-  /**
-   * Health status of all sources
-   */
-  public async getSourcesHealth(): Promise<Record<SourceId, SourceHealth>> {
-    const [dfHealth, iccHealth] = await Promise.all([
-      this.dhakaflix.checkAvailability(),
-      this.icc.checkAvailability()
-    ]);
-
+  public async getSourcesHealth(): Promise<Record<string, SourceHealth>> {
+    const dfHealth = await this.dhakaflix.checkAvailability();
     return {
-      dhakaflix: dfHealth,
-      icc: iccHealth
+      dhakaflix: dfHealth
     };
   }
 
-  /**
-   * Unified catalog retrieval with filtering, search, pagination, and sorting
-   */
   public async getCatalog(options: CatalogQueryOptions = {}): Promise<CatalogResult> {
     const {
-      source = 'all',
       type = 'all',
       category,
       search,
@@ -60,26 +40,12 @@ export class SourceRegistry {
 
     let allItems: MediaItem[] = [];
 
-    // Fetch from requested sources
-    if (source === 'all' || source === 'dhakaflix') {
-      try {
-        const dfItems = await this.dhakaflix.getCatalog(options);
-        allItems.push(...dfItems);
-      } catch (err) {
-        console.error('[Registry] DhakaFlix catalog fetch error:', err);
-      }
+    try {
+      allItems = await this.dhakaflix.getCatalog(options);
+    } catch (err) {
+      console.error('[Registry] DhakaFlix catalog fetch error:', err);
     }
 
-    if (source === 'all' || source === 'icc') {
-      try {
-        const iccItems = await this.icc.getCatalog(options);
-        allItems.push(...iccItems);
-      } catch (err) {
-        console.error('[Registry] ICC catalog fetch error:', err);
-      }
-    }
-
-    // Collect all available categories and years for filter dropdowns
     const categoriesSet = new Set<string>();
     const yearsSet = new Set<number>();
     for (const item of allItems) {
@@ -89,7 +55,6 @@ export class SourceRegistry {
     const categories = Array.from(categoriesSet).sort();
     const years = Array.from(yearsSet).sort((a, b) => b - a);
 
-    // Apply filtering
     let filtered = allItems;
 
     if (type !== 'all') {
@@ -114,7 +79,6 @@ export class SourceRegistry {
       );
     }
 
-    // Sorting
     filtered.sort((a, b) => {
       let comparison = 0;
       if (sortBy === 'title') {
@@ -142,50 +106,17 @@ export class SourceRegistry {
       categories,
       years,
       sourcesActive: {
-        dhakaflix: allItems.some(i => i.source === 'dhakaflix'),
-        icc: allItems.some(i => i.source === 'icc')
+        dhakaflix: allItems.length > 0
       }
     };
   }
 
   public async getItemDetails(itemId: string): Promise<MediaItemDetails> {
-    if (itemId.startsWith('dhakaflix:') || this.isFromSource(itemId, 'dhakaflix')) {
-      return this.dhakaflix.getItemDetails(itemId);
-    }
-    if (itemId.startsWith('icc:') || this.isFromSource(itemId, 'icc')) {
-      return this.icc.getItemDetails(itemId);
-    }
-
-    // Fallback: try dhakaflix first
-    try {
-      return await this.dhakaflix.getItemDetails(itemId);
-    } catch {
-      return await this.icc.getItemDetails(itemId);
-    }
+    return this.dhakaflix.getItemDetails(itemId);
   }
 
   public async resolvePlayback(itemId: string, versionId?: string): Promise<PlaybackDescriptor> {
-    if (itemId.startsWith('dhakaflix:') || this.isFromSource(itemId, 'dhakaflix')) {
-      return this.dhakaflix.resolvePlayback(itemId, versionId);
-    }
-    if (itemId.startsWith('icc:') || this.isFromSource(itemId, 'icc')) {
-      return this.icc.resolvePlayback(itemId, versionId);
-    }
-
-    try {
-      return await this.dhakaflix.resolvePlayback(itemId, versionId);
-    } catch {
-      return await this.icc.resolvePlayback(itemId, versionId);
-    }
-  }
-
-  private isFromSource(itemId: string, sourcePrefix: string): boolean {
-    try {
-      const decoded = Buffer.from(itemId, 'base64url').toString('utf8');
-      return decoded.startsWith(`${sourcePrefix}:`);
-    } catch {
-      return false;
-    }
+    return this.dhakaflix.resolvePlayback(itemId, versionId);
   }
 }
 

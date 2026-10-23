@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { MediaItem, MediaType, SourceId } from '../types/media';
+import { MediaItem, MediaType } from '../types/media';
 import { FilterBar } from '../components/catalog/FilterBar';
 import { MediaGrid } from '../components/catalog/MediaGrid';
 import { ApiService, CatalogResponse } from '../services/api';
@@ -27,7 +27,6 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({
   const [years, setYears] = useState<number[]>([]);
 
   // Filter states
-  const [source, setSource] = useState<SourceId | 'all'>('all');
   const [mediaType, setMediaType] = useState<MediaType | 'all'>(initialType);
   const [category, setCategory] = useState<string>(initialCategory || '');
   const [year, setYear] = useState<number | undefined>(undefined);
@@ -35,10 +34,27 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({
   const [sortBy, setSortBy] = useState<'discoveredAt' | 'title' | 'year'>('discoveredAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
+  useEffect(() => {
+    if (initialCategory !== undefined) {
+      setCategory(initialCategory);
+    }
+  }, [initialCategory]);
+
+  useEffect(() => {
+    if (initialType !== undefined) {
+      setMediaType(initialType);
+    }
+  }, [initialType]);
+
+  useEffect(() => {
+    if (searchQuery !== undefined) {
+      setSearch(searchQuery);
+    }
+  }, [searchQuery]);
+
   const fetchCatalog = useCallback(() => {
     setLoading(true);
     ApiService.getCatalog({
-      source,
       type: mediaType,
       category: category || undefined,
       year,
@@ -64,7 +80,7 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({
       .finally(() => {
         setLoading(false);
       });
-  }, [source, mediaType, category, year, search, sortBy, sortOrder, page]);
+  }, [mediaType, category, year, search, sortBy, sortOrder, page]);
 
   useEffect(() => {
     fetchCatalog();
@@ -77,11 +93,6 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({
 
   const handleCategoryChange = (newCat: string) => {
     setCategory(newCat);
-    setPage(1);
-  };
-
-  const handleSourceChange = (newSource: SourceId | 'all') => {
-    setSource(newSource);
     setPage(1);
   };
 
@@ -106,19 +117,17 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({
   };
 
   return (
-    <div className="pb-12">
-      <div className="mb-6">
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-          {mediaType === 'series' ? 'TV & Web Series Catalog' : 'Media Discovery'}
+    <div className="pb-16">
+      <div className="mb-4">
+        <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+          {category ? category : mediaType === 'series' ? 'TV & Web Series' : 'DhakaFlix Media Catalog'}
         </h1>
-        <p className="text-xs text-gray-400 mt-1">
-          Browse, filter, and stream directly from authorized ISP sources
+        <p className="text-xs text-gray-400 mt-0.5">
+          Organized by categories, release years, and titles
         </p>
       </div>
 
       <FilterBar
-        source={source}
-        onSourceChange={handleSourceChange}
         mediaType={mediaType}
         onMediaTypeChange={handleMediaTypeChange}
         category={category}

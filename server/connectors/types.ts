@@ -1,4 +1,4 @@
-export type SourceId = 'dhakaflix' | 'icc';
+export type SourceId = 'dhakaflix';
 export type MediaType = 'movie' | 'series';
 
 export interface MediaItem {

@@ -42,7 +42,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenShortcuts }) => {
         </div>
 
         <p className="text-[11px] text-gray-500">
-          Sources: DhakaFlix (172.16.50.4) &bull; ICC (10.16.100.244)
+          Source: DhakaFlix (172.16.50.4)
         </p>
       </div>
     </footer>

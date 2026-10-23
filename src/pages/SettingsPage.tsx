@@ -1,15 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Settings as SettingsIcon,
   Keyboard,
-  KeyRound,
-  Save,
   Subtitles,
   Gauge
 } from 'lucide-react';
 import { PlayerSettings } from '../types/media';
 import { StorageService } from '../services/storage';
-import { ApiService } from '../services/api';
 
 interface SettingsPageProps {
   settings: PlayerSettings;
@@ -20,9 +17,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   settings,
   onUpdateSettings
 }) => {
-  const [iccToken, setIccToken] = useState(settings.iccSessionToken || '');
-  const [savingToken, setSavingToken] = useState(false);
-  const [tokenStatus, setTokenStatus] = useState<string | null>(null);
 
   const handleSpeedChange = (speed: number) => {
     const updated = StorageService.saveSettings({ defaultSpeed: speed });
@@ -39,25 +33,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     onUpdateSettings(updated);
   };
 
-  const handleSaveIccToken = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSavingToken(true);
-    setTokenStatus(null);
-    try {
-      const health = await ApiService.saveIccSession(iccToken);
-      StorageService.saveSettings({ iccSessionToken: iccToken });
-      setTokenStatus(
-        health.sessionValid
-          ? 'Session token validated successfully!'
-          : 'Token saved, but verification failed at ICC portal. Ensure your session has not expired.'
-      );
-    } catch (err: unknown) {
-      setTokenStatus(`Error: ${(err as Error).message}`);
-    } finally {
-      setSavingToken(false);
-    }
-  };
-
   return (
     <div className="pb-16 max-w-4xl mx-auto space-y-8">
       <div>
@@ -66,7 +41,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           Platform Settings
         </h1>
         <p className="text-xs text-gray-400 mt-1">
-          Customize your player experience, credentials, and playback preferences
+          Customize your VLC player experience, subtitles, and playback preferences
         </p>
       </div>
 
@@ -152,48 +127,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               ))}
             </div>
           </div>
-        </div>
-
-        {/* ICC Subscriber Session Key */}
-        <div className="bg-bdstream-card border border-bdstream-border rounded-2xl p-6 shadow-sm">
-          <h2 className="text-base font-bold text-white mb-2 flex items-center gap-2">
-            <KeyRound className="w-5 h-5 text-blue-400" />
-            ICC Portal Subscriber Authentication
-          </h2>
-          <p className="text-xs text-gray-400 mb-4">
-            If your broadband connection is on the ICC network, you can input your active subscriber session token to browse and stream from the ICC catalog.
-          </p>
-
-          <form onSubmit={handleSaveIccToken} className="space-y-3">
-            <div>
-              <label className="block text-xs font-mono text-gray-300 mb-1">
-                ICC Session Token (e.g. from dashboard.php?session=...)
-              </label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  placeholder="Paste your session token here..."
-                  value={iccToken}
-                  onChange={(e) => setIccToken(e.target.value)}
-                  className="flex-1 bg-bdstream-surface border border-bdstream-border text-sm text-gray-200 placeholder-gray-600 rounded-xl px-3.5 py-2 focus:outline-none focus:border-vlc-orange"
-                />
-                <button
-                  type="submit"
-                  disabled={savingToken || !iccToken.trim()}
-                  className="px-5 py-2 bg-vlc-orange hover:bg-vlc-darkOrange text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                >
-                  <Save className="w-4 h-4" />
-                  {savingToken ? 'Validating...' : 'Save & Validate'}
-                </button>
-              </div>
-            </div>
-
-            {tokenStatus && (
-              <p className="text-xs font-mono text-amber-400 bg-amber-500/10 p-2.5 rounded-lg border border-amber-500/20">
-                {tokenStatus}
-              </p>
-            )}
-          </form>
         </div>
 
         {/* Keyboard Shortcuts Reference */}

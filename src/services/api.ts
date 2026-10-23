@@ -2,7 +2,6 @@ import {
   MediaItemDetails,
   PlaybackDescriptor,
   SourceHealth,
-  SourceId,
   MediaType
 } from '../types/media';
 
@@ -15,11 +14,11 @@ export interface CatalogResponse {
   totalPages: number;
   categories: string[];
   years: number[];
-  sourcesActive: Record<SourceId, boolean>;
+  sourcesActive: Record<string, boolean>;
 }
 
 export const ApiService = {
-  async getSources(): Promise<Record<SourceId, SourceHealth>> {
+  async getSources(): Promise<Record<string, SourceHealth>> {
     const res = await fetch('/api/sources');
     if (!res.ok) throw new Error(`Failed to fetch sources: ${res.statusText}`);
     const data = await res.json();
@@ -27,7 +26,6 @@ export const ApiService = {
   },
 
   async getCatalog(params: {
-    source?: SourceId | 'all';
     type?: MediaType | 'all';
     category?: string;
     search?: string;
@@ -38,7 +36,6 @@ export const ApiService = {
     limit?: number;
   } = {}): Promise<CatalogResponse> {
     const query = new URLSearchParams();
-    if (params.source && params.source !== 'all') query.set('source', params.source);
     if (params.type && params.type !== 'all') query.set('type', params.type);
     if (params.category) query.set('category', params.category);
     if (params.search) query.set('search', params.search);
@@ -71,24 +68,10 @@ export const ApiService = {
     return data.playback;
   },
 
-  async saveIccSession(token: string): Promise<SourceHealth> {
-    const res = await fetch('/api/sources/icc/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionToken: token })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to update ICC session');
-    return data.health;
-  },
-
   async refreshCatalog(): Promise<void> {
     await fetch('/api/catalog/refresh', { method: 'POST' });
   },
 
-  /**
-   * Helper to format image proxy URL so browser won't be blocked by Private Network Access or CORS
-   */
   getProxyAssetUrl(url?: string): string | undefined {
     if (!url) return undefined;
     return `/api/playback/proxy-asset?url=${encodeURIComponent(url)}`;
