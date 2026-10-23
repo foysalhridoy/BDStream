@@ -129,15 +129,27 @@ export const WatchPage: React.FC<WatchPageProps> = ({ item, versionId, onBack })
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {playback && (
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(playback.directUrl);
+                    alert('Copied direct stream link! Open VLC Desktop -> Media -> Open Network Stream (Ctrl+N) and paste to stream.');
+                  }}
+                  className="px-3.5 py-2 bg-vlc-orange/20 text-vlc-orange hover:bg-vlc-orange/30 border border-vlc-orange/40 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Copy Link for VLC Player
+                </button>
+              )}
               <a
                 href={item.folderUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="px-4 py-2 bg-bdstream-surface hover:bg-white/10 border border-bdstream-border rounded-xl text-xs font-semibold text-gray-200 inline-flex items-center gap-2 transition-colors"
+                className="px-3.5 py-2 bg-bdstream-surface hover:bg-white/10 border border-bdstream-border rounded-xl text-xs font-semibold text-gray-200 inline-flex items-center gap-1.5 transition-colors"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                Open Source Portal
+                Source Directory
               </a>
             </div>
           </div>

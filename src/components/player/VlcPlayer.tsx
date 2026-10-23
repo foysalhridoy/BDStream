@@ -61,6 +61,8 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [useDirectStream, setUseDirectStream] = useState<boolean>(false);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
   // Hover time preview on scrub bar
   const [hoverTime, setHoverTime] = useState<number | null>(null);
@@ -98,7 +100,7 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
     setIsBuffering(true);
 
     let hls: Hls | null = null;
-    const streamUrl = playback.relayStreamUrl || playback.directUrl;
+    const streamUrl = useDirectStream ? playback.directUrl : (playback.relayStreamUrl || playback.directUrl);
 
     if (playback.streamType === 'hls' || streamUrl.includes('.m3u8')) {
       if (Hls.isSupported()) {
@@ -137,7 +139,7 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
         URL.revokeObjectURL(subtitleBlobUrl);
       }
     };
-  }, [playback]);
+  }, [playback, useDirectStream]);
 
   // 2. Auto-hide controls timer
   const resetControlsTimer = useCallback(() => {
@@ -528,30 +530,43 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
 
       {/* Error Overlay */}
       {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/85 z-30 p-6 text-center">
-          <div className="max-w-md bg-bdstream-surface border border-red-500/40 rounded-xl p-6 shadow-2xl">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-30 p-6 text-center">
+          <div className="max-w-lg bg-bdstream-surface border border-red-500/40 rounded-2xl p-6 shadow-2xl">
             <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
-            <h3 className="text-lg font-bold text-white mb-2">Playback Error</h3>
-            <p className="text-sm text-gray-300 mb-4">{error}</p>
-            <div className="flex items-center justify-center gap-3">
+            <h3 className="text-lg font-bold text-white mb-1">Playback Notice</h3>
+            <p className="text-xs text-gray-300 mb-4">{error}</p>
+            <p className="text-[11px] text-gray-400 mb-5 leading-relaxed">
+              If your browser lacks native codecs for this specific MKV container (e.g. AC3/E-AC3 audio or HEVC 10-bit), you can switch to Direct Stream mode, copy the URL to paste into VLC Desktop, or open directly in your media player.
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 onClick={() => {
                   setError(null);
-                  if (videoRef.current) {
-                    videoRef.current.load();
-                    videoRef.current.play().catch(() => {});
-                  }
+                  setUseDirectStream(!useDirectStream);
                 }}
-                className="px-4 py-2 bg-vlc-orange hover:bg-vlc-darkOrange text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors"
+                className="px-4 py-2 bg-vlc-orange hover:bg-vlc-darkOrange text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
               >
-                <RefreshCw className="w-4 h-4" />
-                Retry Playback
+                <RefreshCw className="w-3.5 h-3.5" />
+                {useDirectStream ? 'Try Relay Stream' : 'Switch to Direct ISP Stream'}
               </button>
+
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(playback.directUrl);
+                  setCopiedLink(true);
+                  setTimeout(() => setCopiedLink(false), 2500);
+                }}
+                className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-lg transition-colors"
+              >
+                {copiedLink ? 'Copied URL!' : 'Copy Link for VLC'}
+              </button>
+
               <a
                 href={playback.directUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-sm font-medium rounded-lg transition-colors"
+                className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-gray-200 text-xs font-medium rounded-lg transition-colors"
               >
                 Open Direct URL
               </a>

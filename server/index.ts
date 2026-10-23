@@ -30,9 +30,17 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// Safety handlers to prevent server crashes on stream aborts or client disconnects
+process.on('uncaughtException', (err) => {
+  console.warn('[BDStream Server] Uncaught exception handled:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.warn('[BDStream Server] Unhandled rejection handled:', reason);
+});
+
 // Start server
-const server = app.listen(config.PORT, () => {
-  console.log(`[BDStream Server] Running on http://localhost:${config.PORT}`);
+const server = app.listen(config.PORT, '0.0.0.0', () => {
+  console.log(`[BDStream Server] Running on http://127.0.0.1:${config.PORT}`);
   console.log(`[BDStream Server] Initializing background source catalog scan...`);
   // Trigger initial scan asynchronously so server starts immediately
   registry.getDhakaFlix().refreshCatalog().catch(err => {

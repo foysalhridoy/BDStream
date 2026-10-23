@@ -5,6 +5,25 @@ import { Readable } from 'stream';
 
 export const playbackRouter = Router();
 
+function inferMimeType(url: string, upstreamType?: string | null): string {
+  const lower = url.toLowerCase();
+  if (lower.endsWith('.mp4') || lower.endsWith('.m4v')) return 'video/mp4';
+  if (lower.endsWith('.mkv')) return 'video/x-matroska';
+  if (lower.endsWith('.webm')) return 'video/webm';
+  if (lower.endsWith('.ts')) return 'video/mp2t';
+  if (lower.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.vtt')) return 'text/vtt';
+  if (lower.endsWith('.srt')) return 'text/plain';
+
+  if (upstreamType && upstreamType !== 'application/octet-stream') {
+    return upstreamType;
+  }
+  return 'video/mp4'; // Default to video/mp4 for media playback
+}
+
 // GET /api/playback/resolve/:id - Resolve playable descriptor
 playbackRouter.get('/resolve/:id', async (req: Request, res: Response) => {
   try {
@@ -47,8 +66,15 @@ playbackRouter.get('/stream', async (req: Request, res: Response) => {
     }
 
     const controller = new AbortController();
+    let aborted = false;
+
     req.on('close', () => {
-      controller.abort();
+      aborted = true;
+      try {
+        controller.abort();
+      } catch {
+        // Ignore
+      }
     });
 
     const upstreamRes = await fetch(targetUrl, {
@@ -56,11 +82,14 @@ playbackRouter.get('/stream', async (req: Request, res: Response) => {
       signal: controller.signal
     });
 
+    if (aborted) {
+      return;
+    }
+
     // 3. Set downstream response headers
     res.status(upstreamRes.status);
 
     const headersToForward = [
-      'content-type',
       'content-length',
       'content-range',
       'accept-ranges',
@@ -75,24 +104,42 @@ playbackRouter.get('/stream', async (req: Request, res: Response) => {
       }
     }
 
-    // Always ensure Accept-Ranges is set
+    // Override or infer correct media Content-Type so browsers decode it properly
+    const mime = inferMimeType(targetUrl, upstreamRes.headers.get('content-type'));
+    res.setHeader('Content-Type', mime);
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Access-Control-Allow-Origin', '*');
 
     if (!upstreamRes.body) {
       res.end();
       return;
     }
 
-    // 4. Pipe stream directly to client
+    // 4. Pipe stream safely to client with error traps
     const nodeStream = Readable.fromWeb(upstreamRes.body as import('stream/web').ReadableStream);
+
+    nodeStream.on('error', (err) => {
+      // Normal when browser aborts partial range or user pauses/scrubs
+      if (err.name === 'AbortError' || (err as { code?: string }).code === 'ECONNRESET') {
+        return;
+      }
+      console.warn('[Stream Relay] Streaming warning:', err.message);
+    });
+
+    res.on('close', () => {
+      nodeStream.destroy();
+    });
+
     nodeStream.pipe(res);
   } catch (err: unknown) {
     if ((err as Error).name === 'AbortError') return;
     const status = (err as { statusCode?: number }).statusCode || 500;
-    res.status(status).json({
-      error: (err as Error).message
-    });
+    if (!res.headersSent) {
+      res.status(status).json({
+        error: (err as Error).message
+      });
+    }
   }
 });
 
@@ -107,7 +154,13 @@ playbackRouter.get('/proxy-asset', async (req: Request, res: Response) => {
   try {
     validateMediaUrl(assetUrl);
     const controller = new AbortController();
-    req.on('close', () => controller.abort());
+    req.on('close', () => {
+      try {
+        controller.abort();
+      } catch {
+        // Ignore
+      }
+    });
 
     const upstreamRes = await fetch(assetUrl, {
       signal: controller.signal,
@@ -119,18 +172,26 @@ playbackRouter.get('/proxy-asset', async (req: Request, res: Response) => {
       return;
     }
 
-    const contentType = upstreamRes.headers.get('content-type') || 'application/octet-stream';
+    const contentType = inferMimeType(assetUrl, upstreamRes.headers.get('content-type'));
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Access-Control-Allow-Origin', '*');
 
     if (upstreamRes.body) {
       const nodeStream = Readable.fromWeb(upstreamRes.body as import('stream/web').ReadableStream);
+      nodeStream.on('error', () => {
+        // Ignore client abort
+      });
+      res.on('close', () => {
+        nodeStream.destroy();
+      });
       nodeStream.pipe(res);
     } else {
       res.end();
     }
   } catch (err: unknown) {
-    res.status(400).json({ error: (err as Error).message });
+    if (!res.headersSent) {
+      res.status(400).json({ error: (err as Error).message });
+    }
   }
 });
