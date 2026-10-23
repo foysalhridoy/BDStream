@@ -27,7 +27,7 @@ export class BasPlayConnector {
     try {
       validateMediaUrl(this.baseUrl);
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+      const timeout = setTimeout(() => controller.abort(), 1500);
       const res = await fetch(this.baseUrl, {
         signal: controller.signal,
         headers: { 'Accept': 'text/html,*/*' }
@@ -69,7 +69,10 @@ export class BasPlayConnector {
     }
 
     if (!this.isScanning) {
-      await this.refreshCatalog();
+      const health = await this.checkAvailability();
+      if (health.isAccessible) {
+        await this.refreshCatalog();
+      }
     }
 
     return this.cache?.items || [];

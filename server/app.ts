@@ -14,13 +14,13 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Routes
-app.use('/api/sources', sourcesRouter);
-app.use('/api/catalog', catalogRouter);
-app.use('/api/playback', playbackRouter);
+// Routes - support both /api/... and /... for local and Vercel serverless compatibility
+app.use(['/api/sources', '/sources'], sourcesRouter);
+app.use(['/api/catalog', '/catalog'], catalogRouter);
+app.use(['/api/playback', '/playback'], playbackRouter);
 
 // Health endpoint
-app.get('/api/health', (_req, res) => {
+app.get(['/api/health', '/health'], (_req, res) => {
   res.json({
     status: 'ok',
     name: 'BDStream Media Gateway',

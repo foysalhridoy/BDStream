@@ -28,7 +28,7 @@ export class DhakaFlixConnector {
     try {
       validateMediaUrl(this.baseUrl);
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
+      const timeout = setTimeout(() => controller.abort(), 1500);
 
       const res = await fetch(this.baseUrl, {
         signal: controller.signal,
@@ -73,7 +73,10 @@ export class DhakaFlixConnector {
     }
 
     if (!this.isScanning) {
-      await this.refreshCatalog();
+      const health = await this.checkAvailability();
+      if (health.isAccessible) {
+        await this.refreshCatalog();
+      }
     }
 
     return this.cache?.items || [];

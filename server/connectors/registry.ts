@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DhakaFlixConnector } from './dhakaflix.js';
 import { CineplexConnector } from './cineplex.js';
 import { BasPlayConnector } from './basplay.js';
@@ -9,6 +12,32 @@ import {
   PlaybackDescriptor,
   SourceHealth
 } from './types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let seedCatalog: MediaItem[] = [];
+const seedItemMap = new Map<string, MediaItem>();
+
+try {
+  const candidatePaths = [
+    path.resolve(__dirname, '../data/seed-catalog.json'),
+    path.resolve(__dirname, '../../server/data/seed-catalog.json'),
+    path.resolve(process.cwd(), 'server/data/seed-catalog.json'),
+    path.resolve(process.cwd(), 'dist/server/data/seed-catalog.json')
+  ];
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      seedCatalog = JSON.parse(fs.readFileSync(p, 'utf8'));
+      for (const item of seedCatalog) {
+        seedItemMap.set(item.id, item);
+      }
+      break;
+    }
+  }
+} catch (e) {
+  console.warn('[BDStream] Could not load seed-catalog.json:', (e as Error).message);
+}
 
 export class SourceRegistry {
   private dhakaflix: DhakaFlixConnector;
@@ -102,6 +131,11 @@ export class SourceRegistry {
     if (dfRes.status === 'fulfilled') allItems.push(...dfRes.value);
     if (cpRes.status === 'fulfilled') allItems.push(...cpRes.value);
     if (bpRes.status === 'fulfilled') allItems.push(...bpRes.value);
+
+    // If live crawling returned no items (e.g. serverless cold start on Vercel), fall back to seed catalog
+    if (allItems.length === 0 && seedCatalog.length > 0) {
+      allItems.push(...seedCatalog);
+    }
 
     // If searching, execute live database search on BAS Play and Cineplex to find any available movies/series
     if (search && search.trim()) {
@@ -219,13 +253,51 @@ export class SourceRegistry {
   }
 
   public async getItemDetails(itemId: string): Promise<MediaItemDetails> {
-    const connector = this.resolveConnector(itemId);
-    return connector.getItemDetails(itemId);
+    try {
+      const connector = this.resolveConnector(itemId);
+      return await connector.getItemDetails(itemId);
+    } catch (err) {
+      const seedItem = seedItemMap.get(itemId);
+      if (seedItem) {
+        return {
+          ...seedItem,
+          versions: [{
+            id: Buffer.from(seedItem.folderUrl).toString('base64url'),
+            name: 'Direct ISP Playback (1080P)',
+            quality: seedItem.qualityBadge || '1080P',
+            fileUrl: seedItem.folderUrl
+          }],
+          subtitles: [],
+          directPlaybackSupported: true
+        };
+      }
+      throw err;
+    }
   }
 
   public async resolvePlayback(itemId: string, versionId?: string): Promise<PlaybackDescriptor> {
-    const connector = this.resolveConnector(itemId);
-    return connector.resolvePlayback(itemId, versionId);
+    try {
+      const connector = this.resolveConnector(itemId);
+      return await connector.resolvePlayback(itemId, versionId);
+    } catch (err) {
+      const seedItem = seedItemMap.get(itemId);
+      if (seedItem) {
+        return {
+          itemId,
+          title: seedItem.title,
+          source: seedItem.source,
+          directUrl: seedItem.folderUrl,
+          relayStreamUrl: `/api/playback/relay?url=${encodeURIComponent(seedItem.folderUrl)}`,
+          streamType: 'progressive',
+          mimeType: seedItem.folderUrl.endsWith('.mp4') ? 'video/mp4' : 'video/x-matroska',
+          supportsRangeRequests: true,
+          subtitles: [],
+          availableQualities: [seedItem.qualityBadge || '1080P'],
+          posterUrl: seedItem.posterUrl
+        };
+      }
+      throw err;
+    }
   }
 }
 

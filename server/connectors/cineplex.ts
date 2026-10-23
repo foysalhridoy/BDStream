@@ -104,36 +104,36 @@ export class CineplexConnector {
 
     const discovered: MediaItem[] = [];
 
-    for (const cat of categories) {
-      try {
-        validateMediaUrl(cat.url);
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6000);
-        const res = await fetch(cat.url, { signal: controller.signal });
-        clearTimeout(timeout);
-        if (!res.ok) continue;
+    await Promise.allSettled(
+      categories.map(async (cat) => {
+        try {
+          validateMediaUrl(cat.url);
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 3500);
+          const res = await fetch(cat.url, { signal: controller.signal });
+          clearTimeout(timeout);
+          if (!res.ok) return;
 
-        const html = await res.text();
-        const cardRegex = /<a\s+href="((?:view|tview)\.php\?id=(\d+)[^"]*)"[^>]*>[\s\S]*?<img\s+src="([^"]+)"\s+alt="([^"]+)"/gi;
-        let match: RegExpExecArray | null;
+          const html = await res.text();
+          const cardRegex = /<a\s+href="((?:view|tview)\.php\?id=(\d+)[^"]*)"[^>]*>[\s\S]*?<img\s+src="([^"]+)"\s+alt="([^"]+)"/gi;
+          let match: RegExpExecArray | null;
 
-        while ((match = cardRegex.exec(html)) !== null) {
-          const itemHref = match[1];
-          const rawId = match[2];
-          const posterRelative = match[3];
-          const rawTitle = match[4].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim();
+          while ((match = cardRegex.exec(html)) !== null) {
+            const itemHref = match[1];
+            const rawId = match[2];
+            const posterRelative = match[3];
+            const rawTitle = match[4].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim();
 
-          const fullFolderUrl = `http://cineplexbd.net/${itemHref}`;
-          const posterUrl = posterRelative.startsWith('http')
-            ? posterRelative
-            : `http://cineplexbd.net/${posterRelative.replace(/^\//, '')}`;
+            const fullFolderUrl = `http://cineplexbd.net/${itemHref}`;
+            const posterUrl = posterRelative.startsWith('http')
+              ? posterRelative
+              : `http://cineplexbd.net/${posterRelative.replace(/^\//, '')}`;
 
-          const yearMatch = rawTitle.match(/\b(19\d\d|20\d\d)\b/);
-          const year = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
-          const cleanTitle = rawTitle.replace(/\s*\(\d{4}\).*/, '').replace(/\s*\[.*\]/, '').trim();
-          const id = Buffer.from(`cineplex:${rawId}:${fullFolderUrl}`).toString('base64url');
+            const yearMatch = rawTitle.match(/\b(19\d\d|20\d\d)\b/);
+            const year = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
+            const cleanTitle = rawTitle.replace(/\s*\(\d{4}\).*/, '').replace(/\s*\[.*\]/, '').trim();
+            const id = Buffer.from(`cineplex:${rawId}:${fullFolderUrl}`).toString('base64url');
 
-          if (!discovered.some(d => d.id === id)) {
             discovered.push({
               id,
               title: cleanTitle || rawTitle,
@@ -148,13 +148,19 @@ export class CineplexConnector {
               rawTitle
             });
           }
+        } catch (e) {
+          console.warn(`[CinePlex] Category ${cat.name} crawl warning:`, (e as Error).message);
         }
-      } catch (e) {
-        console.warn(`[CinePlex] Category ${cat.name} crawl warning:`, (e as Error).message);
-      }
-    }
+      })
+    );
 
-    return discovered;
+    // Deduplicate
+    const seen = new Set<string>();
+    return discovered.filter(item => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
   }
 
   public async search(query: string): Promise<MediaItem[]> {
