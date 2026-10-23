@@ -103,43 +103,49 @@ export class DhakaFlixConnector {
   private async crawlDhakaFlix(): Promise<MediaItem[]> {
     const discoveredItems: MediaItem[] = [];
 
+    const allYears = [
+      '%282026%29/', '%282025%29/', '%282024%29/', '%282023%29/', '%282022%29/',
+      '%282021%29/', '%282020%29/', '%282019%29/', '%282018%29/', '%282017%29/',
+      '%282016%29/', '%282015%29/'
+    ];
+
     // Categories structured exactly as DhakaFlix organizes them
     const categoriesToScan = [
       {
         url: 'http://172.16.50.7/DHAKA-FLIX-7/English%20Movies/',
         category: 'English Movies',
         type: 'movie' as const,
-        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/', '%282021%29/']
+        subdirs: allYears
       },
       {
         url: 'http://172.16.50.14/DHAKA-FLIX-14/English%20Movies%20%281080p%29/',
         category: 'English Movies (1080p)',
         type: 'movie' as const,
-        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
+        subdirs: allYears.slice(0, 8)
       },
       {
         url: 'http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/',
         category: 'Hindi Movies',
         type: 'movie' as const,
-        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
+        subdirs: allYears
       },
       {
         url: 'http://172.16.50.14/DHAKA-FLIX-14/SOUTH%20INDIAN%20MOVIES/South%20Movies/',
         category: 'South Indian Movies',
         type: 'movie' as const,
-        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
+        subdirs: allYears.slice(0, 8)
       },
       {
         url: 'http://172.16.50.14/DHAKA-FLIX-14/SOUTH%20INDIAN%20MOVIES/Hindi%20Dubbed/',
         category: 'South (Hindi Dubbed)',
         type: 'movie' as const,
-        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
+        subdirs: allYears.slice(0, 8)
       },
       {
         url: 'http://172.16.50.14/DHAKA-FLIX-14/Animation%20Movies/',
         category: 'Animation Movies',
         type: 'movie' as const,
-        subdirs: ['%282024%29/', '%282023%29/', '%282022%29/']
+        subdirs: allYears.slice(0, 8)
       },
       {
         url: 'http://172.16.50.7/DHAKA-FLIX-7/Kolkata%20Bangla%20Movies/',
@@ -295,26 +301,36 @@ export class DhakaFlixConnector {
     let item = this.itemMap.get(itemId);
     if (!item) {
       try {
-        const decoded = Buffer.from(itemId, 'base64url').toString('utf8');
-        const [source, folderUrl] = decoded.split(':', 2);
-        if (source === 'dhakaflix' && folderUrl) {
-          validateMediaUrl(folderUrl);
-          const folderName = decodeURIComponent(folderUrl.replace(/\/$/, '').split('/').pop() || '');
-          const info = this.parseMediaTitle(folderName);
-          item = {
-            id: itemId,
-            title: info.title,
-            year: info.year,
-            type: folderUrl.includes('TV-WEB-Series') ? 'series' : 'movie',
-            category: 'DhakaFlix Media',
-            source: this.id,
-            posterUrl: `${folderUrl}a_AL_.jpg`,
-            folderUrl,
-            discoveredAt: new Date().toISOString(),
-            qualityBadge: info.quality,
-            rawTitle: folderName
-          };
-          this.itemMap.set(itemId, item);
+        let decoded = '';
+        try {
+          decoded = Buffer.from(itemId, 'base64url').toString('utf8');
+        } catch {
+          decoded = Buffer.from(itemId, 'base64').toString('utf8');
+        }
+
+        const colonIdx = decoded.indexOf(':');
+        if (colonIdx !== -1) {
+          const source = decoded.substring(0, colonIdx);
+          const folderUrl = decoded.substring(colonIdx + 1);
+          if (source === 'dhakaflix' && folderUrl.startsWith('http')) {
+            validateMediaUrl(folderUrl);
+            const folderName = decodeURIComponent(folderUrl.replace(/\/$/, '').split('/').pop() || '');
+            const info = this.parseMediaTitle(folderName);
+            item = {
+              id: itemId,
+              title: info.title,
+              year: info.year,
+              type: folderUrl.includes('TV-WEB-Series') ? 'series' : 'movie',
+              category: 'TV & Web Series',
+              source: this.id,
+              posterUrl: `${folderUrl}a_AL_.jpg`,
+              folderUrl,
+              discoveredAt: new Date().toISOString(),
+              qualityBadge: info.quality,
+              rawTitle: folderName
+            };
+            this.itemMap.set(itemId, item);
+          }
         }
       } catch {
         throw new Error(`Media item not found: ${itemId}`);
@@ -387,8 +403,17 @@ export class DhakaFlixConnector {
         name: filename,
         quality: q,
         fileUrl: fullUrl,
-        mimeType: isMp4 ? 'video/mp4' : isMkv ? 'video/x-matroska' : 'video/webm'
+        mimeType: isMp4 ? 'video/mp4' : 'video/webm'
       };
+    });
+
+    // Prioritize mp4 files for maximum native browser audio/video compatibility
+    versions.sort((a, b) => {
+      const aMp4 = a.fileUrl.toLowerCase().endsWith('.mp4');
+      const bMp4 = b.fileUrl.toLowerCase().endsWith('.mp4');
+      if (aMp4 && !bMp4) return -1;
+      if (!aMp4 && bMp4) return 1;
+      return 0;
     });
 
     // Subtitles
@@ -410,12 +435,23 @@ export class DhakaFlixConnector {
     let seasons: { seasonNumber: number; episodes: { episodeNumber: number; title: string; fileUrl: string; }[] }[] | undefined;
 
     if (seasonFolders.length > 0) {
+      // Sort season folders so Season 1 comes first, then Season 2, etc.
+      seasonFolders.sort((a, b) => {
+        const aName = decodeURIComponent(a);
+        const bName = decodeURIComponent(b);
+        const aNum = parseInt(aName.match(/(?:season|series|\b0*)(\d+)\b/i)?.[1] || '1', 10);
+        const bNum = parseInt(bName.match(/(?:season|series|\b0*)(\d+)\b/i)?.[1] || '1', 10);
+        return aNum - bNum;
+      });
+
       seasons = [];
+      const allSeasonVersions: MediaVersion[] = [];
+
       for (let sIdx = 0; sIdx < seasonFolders.length; sIdx++) {
         const sFolder = seasonFolders[sIdx];
         const sUrl = new URL(sFolder, item.folderUrl).href;
         const sName = decodeURIComponent(sFolder.replace(/\/$/, '').split('/').pop() || '');
-        const sNumMatch = sName.match(/\b(\d+)\b/);
+        const sNumMatch = sName.match(/(?:season|series|\b0*)(\d+)\b/i);
         const seasonNumber = sNumMatch ? parseInt(sNumMatch[1], 10) : sIdx + 1;
 
         try {
@@ -423,33 +459,56 @@ export class DhakaFlixConnector {
           if (sRes.ok) {
             const sHtml = await sRes.text();
             const sEpFiles = [...sHtml.matchAll(/href=["']([^"']+\.(mkv|mp4|webm))["']/gi)].map(m => m[1]);
-            const episodes = sEpFiles.map((epFile, epIdx) => {
+
+            // Filter out non-episode files (samples, trailers, extras)
+            const validEpFiles = sEpFiles.filter(f => !/sample|trailer|extra|featurette|preview/i.test(decodeURIComponent(f)));
+
+            // Extract episode number and sort naturally
+            const parsedEps = validEpFiles.map(epFile => {
               const epUrl = new URL(epFile, sUrl).href;
               const epName = decodeURIComponent(epFile.split('/').pop() || epFile);
+              const epNumMatch = epName.match(/(?:s\d+e|ep(?:isode)?[\s._-]*|\b0*)(\d{1,3})\b/i);
+              const extractedEpNum = epNumMatch ? parseInt(epNumMatch[1], 10) : 0;
               return {
-                episodeNumber: epIdx + 1,
                 title: epName.replace(/\.(mkv|mp4|webm)$/i, ''),
-                fileUrl: epUrl
+                fileUrl: epUrl,
+                extractedEpNum
               };
             });
 
+            parsedEps.sort((a, b) => {
+              if (a.extractedEpNum > 0 && b.extractedEpNum > 0 && a.extractedEpNum !== b.extractedEpNum) {
+                return a.extractedEpNum - b.extractedEpNum;
+              }
+              return a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' });
+            });
+
+            const episodes = parsedEps.map((ep, idx) => ({
+              episodeNumber: ep.extractedEpNum > 0 ? ep.extractedEpNum : idx + 1,
+              title: ep.title,
+              fileUrl: ep.fileUrl
+            }));
+
             if (episodes.length > 0) {
               seasons.push({ seasonNumber, episodes });
-              // Also add first episode to versions if versions was empty
-              if (versions.length === 0 && episodes.length > 0) {
-                versions = episodes.map(ep => ({
-                  id: Buffer.from(ep.fileUrl).toString('base64url'),
-                  name: `S${seasonNumber}E${ep.episodeNumber}: ${ep.title}`,
-                  quality: item.qualityBadge || '720P',
-                  fileUrl: ep.fileUrl,
-                  mimeType: ep.fileUrl.endsWith('.mp4') ? 'video/mp4' : 'video/x-matroska'
-                }));
-              }
+              const seasonVersions = episodes.map(ep => ({
+                id: Buffer.from(ep.fileUrl).toString('base64url'),
+                name: `S${String(seasonNumber).padStart(2, '0')}E${String(ep.episodeNumber).padStart(2, '0')}: ${ep.title}`,
+                quality: item.qualityBadge || '720P',
+                fileUrl: ep.fileUrl,
+                mimeType: ep.fileUrl.endsWith('.mp4') ? 'video/mp4' : 'video/x-matroska'
+              }));
+              allSeasonVersions.push(...seasonVersions);
             }
           }
         } catch (e) {
           console.warn('[DhakaFlix] Error scanning season:', (e as Error).message);
         }
+      }
+
+      if (allSeasonVersions.length > 0) {
+        // Place Season 1 Episode 1 as the very first version in versions array
+        versions = [...allSeasonVersions, ...versions];
       }
     }
 
@@ -471,7 +530,20 @@ export class DhakaFlixConnector {
 
     let selectedVersion = details.versions[0];
     if (versionId) {
-      const found = details.versions.find(v => v.id === versionId);
+      let found = details.versions.find(v => v.id === versionId || v.fileUrl === versionId);
+      if (!found) {
+        let decUrl = versionId;
+        try {
+          const d1 = Buffer.from(versionId, 'base64url').toString('utf8');
+          if (d1.startsWith('http')) decUrl = d1;
+        } catch {}
+        try {
+          const d2 = Buffer.from(versionId, 'base64').toString('utf8');
+          if (d2.startsWith('http')) decUrl = d2;
+        } catch {}
+
+        found = details.versions.find(v => v.fileUrl === decUrl || v.fileUrl.endsWith(decUrl));
+      }
       if (found) selectedVersion = found;
     }
 
@@ -504,7 +576,8 @@ export class DhakaFlixConnector {
       sizeBytes,
       supportsRangeRequests: supportsRange,
       subtitles: details.subtitles,
-      availableQualities: [...new Set(details.versions.map(v => v.quality))]
+      availableQualities: [...new Set(details.versions.map(v => v.quality))],
+      posterUrl: details.posterUrl
     };
   }
 }

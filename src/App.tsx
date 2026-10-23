@@ -36,20 +36,11 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Sync theme
+  // Set light mode
   useEffect(() => {
-    if (settings.theme === 'light') {
-      document.documentElement.classList.add('light');
-    } else {
-      document.documentElement.classList.remove('light');
-    }
-  }, [settings.theme]);
-
-  const handleThemeToggle = () => {
-    const nextTheme = settings.theme === 'dark' ? 'light' : 'dark';
-    const updated = StorageService.saveSettings({ theme: nextTheme });
-    setSettings(updated);
-  };
+    document.documentElement.classList.add('light');
+    document.documentElement.classList.remove('dark');
+  }, []);
 
   const handleNavigateTab = (tab: string, cat?: string) => {
     setCategoryFilter(cat);
@@ -70,19 +61,17 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-bdstream-dark text-gray-100">
+    <div className="min-h-screen flex flex-col bg-[#f6f7fb] text-neutral-900 transition-colors duration-200 w-full max-w-full overflow-x-hidden selection:bg-neutral-900 selection:text-white font-sans">
       {/* Header */}
       <Header
         currentTab={currentTab}
         onTabChange={(tab) => handleNavigateTab(tab)}
         onSearch={handleSearch}
         sourcesHealth={sourcesHealth}
-        theme={settings.theme}
-        onThemeToggle={handleThemeToggle}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 pt-1 sm:pt-6 overflow-x-hidden">
         {currentTab === 'home' && (
           <HomePage
             onSelectItem={(item) => setActiveItem(item)}
@@ -141,57 +130,60 @@ export const App: React.FC = () => {
 
       {/* Keyboard Shortcuts Modal */}
       {showShortcutsModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-bdstream-card border border-bdstream-border max-w-md w-full rounded-2xl p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-bdstream-border mb-4">
-              <h3 className="font-bold text-white text-base">VLC Player Shortcuts</h3>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-neutral-200 max-w-md w-full rounded-2xl p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-200 mb-4">
+              <h3 className="font-bold text-neutral-900 text-base flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#d4ff00] animate-pulse" />
+                BDStream <span className="bg-[#d4ff00] text-black px-2 py-0.5 rounded-md font-black text-xs">Shortcuts</span>
+              </h3>
               <button
                 onClick={() => setShowShortcutsModal(false)}
-                className="text-gray-400 hover:text-white text-lg"
+                className="text-neutral-400 hover:text-neutral-700 text-lg leading-none"
               >
                 &times;
               </button>
             </div>
 
             <div className="space-y-2 text-xs font-mono">
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Play / Pause</span>
-                <kbd className="px-2 py-0.5 bg-gray-800 text-white rounded">Space</kbd>
+              <div className="flex justify-between py-1 border-b border-neutral-100">
+                <span className="text-neutral-600">Play / Pause</span>
+                <kbd className="px-2 py-0.5 bg-neutral-100 border border-neutral-200 text-neutral-900 rounded font-semibold">Space</kbd>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Seek 5s Back / Forward</span>
-                <kbd className="px-2 py-0.5 bg-gray-800 text-white rounded">&larr; / &rarr;</kbd>
+              <div className="flex justify-between py-1 border-b border-neutral-100">
+                <span className="text-neutral-600">Seek 5s Back / Forward</span>
+                <kbd className="px-2 py-0.5 bg-neutral-100 border border-neutral-200 text-neutral-900 rounded font-semibold">&larr; / &rarr;</kbd>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Seek 30s Back / Forward</span>
-                <kbd className="px-2 py-0.5 bg-gray-800 text-white rounded">Shift + &larr; / &rarr;</kbd>
+              <div className="flex justify-between py-1 border-b border-neutral-100">
+                <span className="text-neutral-600">Seek 30s Back / Forward</span>
+                <kbd className="px-2 py-0.5 bg-neutral-100 border border-neutral-200 text-neutral-900 rounded font-semibold">Shift + &larr; / &rarr;</kbd>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Volume Up / Down</span>
-                <kbd className="px-2 py-0.5 bg-gray-800 text-white rounded">&uarr; / &darr;</kbd>
+              <div className="flex justify-between py-1 border-b border-neutral-100">
+                <span className="text-neutral-600">Volume Up / Down</span>
+                <kbd className="px-2 py-0.5 bg-neutral-100 border border-neutral-200 text-neutral-900 rounded font-semibold">&uarr; / &darr;</kbd>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Toggle Fullscreen</span>
-                <kbd className="px-2 py-0.5 bg-gray-800 text-white rounded">F</kbd>
+              <div className="flex justify-between py-1 border-b border-neutral-100">
+                <span className="text-neutral-600">Toggle Fullscreen</span>
+                <kbd className="px-2 py-0.5 bg-neutral-100 border border-neutral-200 text-neutral-900 rounded font-semibold">F</kbd>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Mute / Unmute</span>
-                <kbd className="px-2 py-0.5 bg-gray-800 text-white rounded">M</kbd>
+              <div className="flex justify-between py-1 border-b border-neutral-100">
+                <span className="text-neutral-600">Mute / Unmute</span>
+                <kbd className="px-2 py-0.5 bg-neutral-100 border border-neutral-200 text-neutral-900 rounded font-semibold">M</kbd>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Subtitles Toggle</span>
-                <kbd className="px-2 py-0.5 bg-gray-800 text-white rounded">C</kbd>
+              <div className="flex justify-between py-1 border-b border-neutral-100">
+                <span className="text-neutral-600">Subtitles Toggle</span>
+                <kbd className="px-2 py-0.5 bg-neutral-100 border border-neutral-200 text-neutral-900 rounded font-semibold">C</kbd>
               </div>
               <div className="flex justify-between py-1">
-                <span className="text-gray-400">Speed Down / Up</span>
-                <kbd className="px-2 py-0.5 bg-gray-800 text-white rounded">[ / ]</kbd>
+                <span className="text-neutral-600">Speed Down / Up</span>
+                <kbd className="px-2 py-0.5 bg-neutral-100 border border-neutral-200 text-neutral-900 rounded font-semibold">[ / ]</kbd>
               </div>
             </div>
 
             <div className="mt-6 flex justify-end">
               <button
                 onClick={() => setShowShortcutsModal(false)}
-                className="px-4 py-2 bg-vlc-orange text-white text-xs font-semibold rounded-lg hover:bg-vlc-darkOrange transition-colors"
+                className="px-5 py-2 bg-[#d4ff00] hover:bg-[#c4ec00] text-black font-black text-xs rounded-full transition-colors shadow-sm"
               >
                 Close
               </button>

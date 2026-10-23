@@ -26,9 +26,11 @@ export const ApiService = {
   },
 
   async getCatalog(params: {
+    source?: string;
     type?: MediaType | 'all';
     category?: string;
     search?: string;
+    letter?: string;
     year?: number;
     sortBy?: 'discoveredAt' | 'title' | 'year';
     sortOrder?: 'asc' | 'desc';
@@ -36,9 +38,11 @@ export const ApiService = {
     limit?: number;
   } = {}): Promise<CatalogResponse> {
     const query = new URLSearchParams();
+    if (params.source && params.source !== 'all') query.set('source', params.source);
     if (params.type && params.type !== 'all') query.set('type', params.type);
     if (params.category) query.set('category', params.category);
     if (params.search) query.set('search', params.search);
+    if (params.letter && params.letter !== 'All') query.set('letter', params.letter);
     if (params.year) query.set('year', params.year.toString());
     if (params.sortBy) query.set('sortBy', params.sortBy);
     if (params.sortOrder) query.set('sortOrder', params.sortOrder);

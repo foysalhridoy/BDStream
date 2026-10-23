@@ -46,19 +46,19 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             placeholder="Search titles, release years..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full bg-bdstream-surface border border-bdstream-border text-xs text-gray-200 placeholder-gray-500 rounded-xl pl-9 pr-4 py-2 focus:outline-none focus:border-vlc-orange focus:ring-1 focus:ring-vlc-orange transition-all"
+            className="w-full bg-white border border-neutral-200 text-xs text-neutral-900 placeholder-neutral-400 rounded-full pl-9 pr-4 py-2 focus:outline-none focus:border-[#d4ff00] focus:ring-2 focus:ring-[#d4ff00]/40 shadow-xs transition-colors"
           />
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+          <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
         </div>
 
         {/* Year & Sort Controls */}
-        <div className="flex items-center gap-2 self-end sm:self-auto text-xs">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto justify-between sm:justify-end text-xs">
           {/* Year select */}
           {years.length > 0 && (
             <select
               value={year || ''}
               onChange={(e) => onYearChange(e.target.value ? parseInt(e.target.value, 10) : undefined)}
-              className="bg-bdstream-surface border border-bdstream-border text-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-vlc-orange cursor-pointer text-xs"
+              className="bg-white border border-neutral-200 text-neutral-700 rounded-full px-3.5 py-2 focus:outline-none focus:border-[#d4ff00] focus:ring-2 focus:ring-[#d4ff00]/40 cursor-pointer text-xs shadow-xs"
             >
               <option value="">All Years</option>
               {years.map((y) => (
@@ -73,7 +73,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <select
             value={sortBy}
             onChange={(e) => onSortByChange(e.target.value as 'discoveredAt' | 'title' | 'year')}
-            className="bg-bdstream-surface border border-bdstream-border text-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-vlc-orange cursor-pointer text-xs"
+            className="bg-white border border-neutral-200 text-neutral-700 rounded-full px-3.5 py-2 focus:outline-none focus:border-[#d4ff00] focus:ring-2 focus:ring-[#d4ff00]/40 cursor-pointer text-xs shadow-xs"
           >
             <option value="discoveredAt">Recently Added</option>
             <option value="title">Name (A - Z)</option>
@@ -83,37 +83,37 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <button
             onClick={onSortOrderToggle}
             title={`Order: ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
-            className="p-2 bg-bdstream-surface border border-bdstream-border text-gray-300 hover:text-white rounded-xl transition-colors"
+            className="p-2 bg-white border border-neutral-200 text-neutral-700 hover:text-black rounded-full shadow-xs transition-colors"
           >
             <ArrowUpDown className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* DhakaFlix Category Pills */}
+      {/* Category Pills */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
         <button
           onClick={() => {
             onMediaTypeChange('all');
             onCategoryChange('');
           }}
-          className={`px-3 py-1.5 rounded-xl whitespace-nowrap font-medium transition-colors ${
+          className={`px-3.5 py-1.5 rounded-full whitespace-nowrap text-xs font-black transition-all ${
             !category && mediaType === 'all'
-              ? 'bg-vlc-orange text-white shadow-sm'
-              : 'bg-bdstream-surface text-gray-300 hover:text-white border border-bdstream-border/60'
+              ? 'bg-[#d4ff00] text-black font-black shadow-sm'
+              : 'bg-white text-neutral-600 hover:text-black border border-neutral-200 shadow-2xs hover:border-neutral-300'
           }`}
         >
-          All DhakaFlix
+          All Categories
         </button>
 
         {categories.map((c) => (
           <button
             key={c}
             onClick={() => onCategoryChange(c === category ? '' : c)}
-            className={`px-3 py-1.5 rounded-xl whitespace-nowrap font-medium transition-colors ${
+            className={`px-3.5 py-1.5 rounded-full whitespace-nowrap text-xs font-black transition-all ${
               category === c
-                ? 'bg-vlc-orange text-white shadow-sm'
-                : 'bg-bdstream-surface text-gray-300 hover:text-white border border-bdstream-border/60'
+                ? 'bg-[#d4ff00] text-black font-black shadow-sm'
+                : 'bg-white text-neutral-600 hover:text-black border border-neutral-200 shadow-2xs hover:border-neutral-300'
             }`}
           >
             {c}

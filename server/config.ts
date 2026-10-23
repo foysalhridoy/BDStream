@@ -12,7 +12,7 @@ const envSchema = z.object({
 
 export const config = envSchema.parse(process.env);
 
-// Strict Allowlist for SSRF Prevention (DhakaFlix storage clusters)
+// Strict Allowlist for SSRF Prevention (DhakaFlix, CinePlex, and BAS Play storage clusters)
 export const ALLOWED_SOURCE_HOSTS = new Set([
   '172.16.50.4',
   '172.16.50.7',
@@ -20,4 +20,8 @@ export const ALLOWED_SOURCE_HOSTS = new Set([
   '172.16.50.10',
   '172.16.50.12',
   '172.16.50.14',
+  'cineplexbd.net',
+  'vod.cineplexbd.net',
+  'software.cineplexbd.net',
+  '10.20.30.40'
 ]);

@@ -1,5 +1,6 @@
 import React from 'react';
 import { ShieldCheck, HardDrive, Keyboard } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
 
 interface FooterProps {
   onOpenShortcuts?: () => void;
@@ -7,42 +8,37 @@ interface FooterProps {
 
 export const Footer: React.FC<FooterProps> = ({ onOpenShortcuts }) => {
   return (
-    <footer className="border-t border-bdstream-border bg-bdstream-dark/60 mt-16 py-8 text-xs text-gray-400">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-6 h-6 bg-vlc-orange/20 text-vlc-orange rounded flex items-center justify-center font-bold text-xs">
-            BD
-          </div>
-          <div>
-            <p className="font-semibold text-gray-200">BDStream</p>
-            <p className="text-[11px] text-gray-500">
-              Direct ISP streaming platform with VLC-inspired engine
-            </p>
-          </div>
+    <footer className="border-t border-neutral-200/80 bg-white mt-4 sm:mt-8 py-4 sm:py-5 text-xs text-neutral-500 shadow-xs">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-4">
+        {/* Brand */}
+        <div className="flex items-center gap-2">
+          <BrandLogo size="sm" />
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-6 text-[11px]">
-          <span className="flex items-center gap-1.5 text-gray-400">
-            <HardDrive className="w-3.5 h-3.5 text-vlc-orange" />
-            Direct Byte-Range Playback
+        {/* Feature Badges - perfectly aligned and responsive on all devices */}
+        <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-[11px]">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-100 text-neutral-700 border border-neutral-200/70 font-medium shadow-2xs">
+            <HardDrive className="w-3.5 h-3.5 text-neutral-800" />
+            Byte-Range Streaming
           </span>
-          <span className="flex items-center gap-1.5 text-gray-400">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            SSRF Guard & Allowlist Enforced
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-100 text-neutral-700 border border-neutral-200/70 font-medium shadow-2xs">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            SSRF Guard Active
           </span>
           {onOpenShortcuts && (
             <button
               onClick={onOpenShortcuts}
-              className="flex items-center gap-1.5 text-vlc-orange hover:underline cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-100 hover:bg-[#d4ff00] hover:text-black border border-neutral-200/70 text-neutral-800 transition-colors cursor-pointer font-bold shadow-2xs"
             >
-              <Keyboard className="w-3.5 h-3.5" />
+              <Keyboard className="w-3.5 h-3.5 text-neutral-700" />
               Keyboard Shortcuts
             </button>
           )}
         </div>
 
-        <p className="text-[11px] text-gray-500">
-          Source: DhakaFlix (172.16.50.4)
+        {/* Sources Info */}
+        <p className="text-[11px] text-neutral-400 font-mono text-center md:text-right">
+          Sources: DhakaFlix &bull; CinePlex BD &bull; BAS Play
         </p>
       </div>
     </footer>

@@ -12,6 +12,7 @@ catalogRouter.get('/', async (req: Request, res: Response) => {
       type: (req.query.type as MediaType | 'all') || 'all',
       category: req.query.category as string | undefined,
       search: req.query.search as string | undefined,
+      letter: req.query.letter as string | undefined,
       year: req.query.year ? parseInt(req.query.year as string, 10) : undefined,
       sortBy: (req.query.sortBy as 'discoveredAt' | 'title' | 'year') || 'discoveredAt',
       sortOrder: (req.query.sortOrder as 'asc' | 'desc') || 'desc',
@@ -35,7 +36,7 @@ catalogRouter.get('/', async (req: Request, res: Response) => {
 // GET /api/catalog/:id - Item details (versions, poster, subtitles)
 catalogRouter.get('/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const details = await registry.getItemDetails(id);
     res.json({
       success: true,

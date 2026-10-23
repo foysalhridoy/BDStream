@@ -30,7 +30,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
         {Array.from({ length: 12 }).map((_, i) => (
           <div
             key={i}
-            className="aspect-[2/3] bg-bdstream-card border border-bdstream-border rounded-xl animate-pulse"
+            className="aspect-[2/3] bg-white border border-neutral-200/90 rounded-2xl animate-pulse shadow-xs"
           />
         ))}
       </div>
@@ -39,16 +39,16 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
 
   if (items.length === 0) {
     return (
-      <div className="bg-bdstream-card border border-bdstream-border rounded-2xl p-12 text-center max-w-lg mx-auto my-12">
-        <Film className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-        <h3 className="text-lg font-bold text-gray-200 mb-2">No Media Discovered</h3>
-        <p className="text-sm text-gray-400 mb-6">
+      <div className="bg-white border border-neutral-200 rounded-3xl p-12 text-center max-w-lg mx-auto my-12 shadow-sm">
+        <Film className="w-16 h-16 text-neutral-300 mx-auto mb-4" />
+        <h3 className="text-lg font-bold text-neutral-900 mb-2">No Media Discovered</h3>
+        <p className="text-sm text-neutral-500 mb-6">
           No media matching your selected filters were found on the connected ISP sources.
         </p>
         {onRetry && (
           <button
             onClick={onRetry}
-            className="px-4 py-2 bg-vlc-orange hover:bg-vlc-darkOrange text-white text-sm font-semibold rounded-lg inline-flex items-center gap-2 transition-colors"
+            className="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-extrabold rounded-full inline-flex items-center gap-2 transition-colors shadow-sm"
           >
             <RefreshCw className="w-4 h-4" />
             Refresh Catalog
@@ -78,21 +78,21 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
           <button
             disabled={page <= 1}
             onClick={() => onPageChange(page - 1)}
-            className="p-2 rounded-lg bg-bdstream-surface border border-bdstream-border text-gray-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="p-2.5 rounded-full bg-white border border-neutral-200 text-neutral-700 hover:text-neutral-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-xs"
             title="Previous Page"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
 
-          <span className="font-mono text-xs text-gray-400">
-            Page <strong className="text-white">{page}</strong> of{' '}
-            <strong className="text-white">{totalPages}</strong>
+          <span className="font-mono text-xs text-neutral-500">
+            Page <strong className="text-neutral-900 font-bold">{page}</strong> of{' '}
+            <strong className="text-neutral-900 font-bold">{totalPages}</strong>
           </span>
 
           <button
             disabled={page >= totalPages}
             onClick={() => onPageChange(page + 1)}
-            className="p-2 rounded-lg bg-bdstream-surface border border-bdstream-border text-gray-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="p-2.5 rounded-full bg-white border border-neutral-200 text-neutral-700 hover:text-neutral-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-xs"
             title="Next Page"
           >
             <ChevronRight className="w-5 h-5" />

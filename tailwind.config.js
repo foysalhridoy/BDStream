@@ -7,26 +7,31 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      screens: {
+        xs: '480px',
+      },
       colors: {
         vlc: {
-          orange: '#FF8800',
-          darkOrange: '#E06D00',
-          amber: '#FFA500',
-          lightOrange: '#FF9E33',
-          cone: '#F47721'
+          orange: '#d4ff00',
+          darkOrange: '#c4ec00',
+          amber: '#fbbf24',
+          lightOrange: '#fef08a',
+          cone: '#d4ff00'
         },
         bdstream: {
-          dark: '#0c0e14',
-          card: '#141824',
-          cardHover: '#1c2234',
-          border: '#23293d',
-          surface: '#111522',
-          text: '#f3f4f6',
-          muted: '#9ca3af',
+          dark: 'var(--bg-main)',
+          card: 'var(--card-bg)',
+          cardHover: 'var(--card-hover)',
+          border: 'var(--border-color)',
+          surface: 'var(--surface-bg)',
+          text: 'var(--text-primary)',
+          muted: 'var(--text-secondary)',
+          accent: '#d4ff00'
         }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['"Lexend"', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace']
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',

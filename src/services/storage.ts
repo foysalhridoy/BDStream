@@ -39,9 +39,12 @@ export const StorageService = {
       const data = localStorage.getItem(PROGRESS_STORAGE_KEY);
       if (!data) return [];
       const parsed: Record<string, WatchProgress> = JSON.parse(data);
-      return Object.values(parsed).sort(
-        (a, b) => new Date(b.lastWatchedAt).getTime() - new Date(a.lastWatchedAt).getTime()
-      );
+      // Filter out individual episode sub-keys (which contain ':::') so continue watching only shows parent media items
+      return Object.values(parsed)
+        .filter(p => !p.itemId.includes(':::'))
+        .sort(
+          (a, b) => new Date(b.lastWatchedAt).getTime() - new Date(a.lastWatchedAt).getTime()
+        );
     } catch {
       return [];
     }
@@ -55,6 +58,46 @@ export const StorageService = {
       return parsed[itemId] || null;
     } catch {
       return null;
+    }
+  },
+
+  getEpisodeProgress(itemId: string, streamUrl: string): WatchProgress | null {
+    try {
+      const key = `${itemId}:::${streamUrl}`;
+      const data = localStorage.getItem(PROGRESS_STORAGE_KEY);
+      if (!data) return null;
+      const parsed: Record<string, WatchProgress> = JSON.parse(data);
+      return parsed[key] || null;
+    } catch {
+      return null;
+    }
+  },
+
+  saveEpisodeProgress(itemId: string, streamUrl: string, progress: WatchProgress): void {
+    try {
+      const key = `${itemId}:::${streamUrl}`;
+      if (progress.duration > 0 && progress.currentTime / progress.duration > 0.95) {
+        this.clearProgress(key);
+        return;
+      }
+      if (progress.currentTime < 5) return;
+
+      const data = localStorage.getItem(PROGRESS_STORAGE_KEY);
+      const parsed: Record<string, WatchProgress> = data ? JSON.parse(data) : {};
+      parsed[key] = {
+        ...progress,
+        itemId: key,
+        lastWatchedAt: new Date().toISOString()
+      };
+      // Also update parent item with latest poster and title for Continue Watching on homepage
+      parsed[itemId] = {
+        ...progress,
+        itemId,
+        lastWatchedAt: new Date().toISOString()
+      };
+      localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(parsed));
+    } catch {
+      // Ignore quota errors
     }
   },
 

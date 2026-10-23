@@ -32,9 +32,9 @@ export function validateMediaUrl(targetUrl: string): URL {
     );
   }
 
-  // Port check: default HTTP/HTTPS or 80/443 only
+  // Port check: default HTTP/HTTPS or 80/443/8080/8081 only
   const port = parsed.port;
-  if (port && port !== '80' && port !== '443') {
+  if (port && port !== '80' && port !== '443' && port !== '8080' && port !== '8081') {
     throw new SecurityError(`Forbidden port: ${port}`);
   }
 

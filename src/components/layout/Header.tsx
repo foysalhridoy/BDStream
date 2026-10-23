@@ -3,84 +3,65 @@ import {
   Film,
   Tv,
   Search,
-  Sun,
-  Moon,
   Server
 } from 'lucide-react';
 import { SourceHealth } from '../../types/media';
+import { BrandLogo } from './BrandLogo';
 
 interface HeaderProps {
   currentTab: string;
   onTabChange: (tab: string) => void;
   onSearch: (query: string) => void;
   sourcesHealth: Record<string, SourceHealth> | null;
-  theme: string;
-  onThemeToggle: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentTab,
   onTabChange,
   onSearch,
-  sourcesHealth,
-  theme,
-  onThemeToggle
+  sourcesHealth
 }) => {
   const [searchInput, setSearchInput] = useState('');
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchInput.trim()) {
       onSearch(searchInput.trim());
       onTabChange('catalog');
+      setShowMobileSearch(false);
     }
   };
 
   const dfAvailable = sourcesHealth?.dhakaflix?.isAccessible ?? false;
-  const itemCount = sourcesHealth?.dhakaflix?.itemCount ?? 0;
+  const cpAvailable = sourcesHealth?.cineplex?.isAccessible ?? false;
+  const bpAvailable = sourcesHealth?.basplay?.isAccessible ?? false;
 
   return (
-    <header className="sticky top-0 z-40 bg-bdstream-dark/95 backdrop-blur-md border-b border-bdstream-border">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-neutral-200/80 shadow-xs">
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-1.5 sm:gap-4">
         {/* Brand Logo */}
         <div
           onClick={() => {
             onSearch('');
             onTabChange('home');
           }}
-          className="flex items-center gap-3 cursor-pointer group select-none"
+          className="cursor-pointer group select-none flex-shrink-0"
         >
-          <div className="relative w-9 h-9 bg-gradient-to-br from-vlc-lightOrange via-vlc-orange to-vlc-darkOrange rounded-xl flex items-center justify-center shadow-lg shadow-vlc-orange/20 group-hover:scale-105 transition-transform">
-            <svg
-              className="w-5 h-5 text-white drop-shadow"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <polygon points="5,3 19,12 5,21" />
-            </svg>
-            <span className="absolute -bottom-1 w-3 h-0.5 bg-white/70 rounded-full" />
-          </div>
-          <div>
-            <span className="text-xl font-bold tracking-tight text-white flex items-center gap-1">
-              BD<span className="text-vlc-orange">Stream</span>
-            </span>
-            <span className="hidden sm:block text-[10px] text-gray-400 font-mono tracking-wider -mt-1">
-              DHAKAFLIX STREAMER
-            </span>
-          </div>
+          <BrandLogo size="md" />
         </div>
 
-        {/* Minimal Navigation */}
-        <nav className="flex items-center gap-1 bg-bdstream-surface px-2 py-1 rounded-xl border border-bdstream-border/60">
+        {/* Rounded-Full Pill Navigation */}
+        <nav className="flex items-center gap-1 bg-white p-1 rounded-full border border-neutral-200/90 shadow-2xs flex-shrink-0">
           <button
             onClick={() => {
               onSearch('');
               onTabChange('home');
             }}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+            className={`px-3.5 sm:px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
               currentTab === 'home'
-                ? 'bg-vlc-orange text-white shadow-sm'
-                : 'text-gray-300 hover:text-white hover:bg-white/5'
+                ? 'bg-[#d4ff00] text-black font-extrabold shadow-sm'
+                : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
             }`}
           >
             Home
@@ -89,64 +70,104 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => {
               onTabChange('catalog');
             }}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+            className={`px-3 sm:px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
               currentTab === 'catalog'
-                ? 'bg-vlc-orange text-white shadow-sm'
-                : 'text-gray-300 hover:text-white hover:bg-white/5'
+                ? 'bg-[#d4ff00] text-black font-extrabold shadow-sm'
+                : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
             }`}
           >
             <Film className="w-3.5 h-3.5" />
-            Movies
+            <span className="hidden xs:inline">Movies</span>
           </button>
           <button
             onClick={() => {
               onTabChange('series');
             }}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+            className={`px-3 sm:px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
               currentTab === 'series'
-                ? 'bg-vlc-orange text-white shadow-sm'
-                : 'text-gray-300 hover:text-white hover:bg-white/5'
+                ? 'bg-[#d4ff00] text-black font-extrabold shadow-sm'
+                : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
             }`}
           >
             <Tv className="w-3.5 h-3.5" />
-            TV Series
+            <span className="hidden xs:inline">Series</span>
           </button>
         </nav>
 
         {/* Search & Actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
           <form onSubmit={handleSearchSubmit} className="relative hidden md:block w-56 lg:w-72">
             <input
               type="text"
               placeholder="Search movies & series..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full bg-bdstream-surface border border-bdstream-border text-xs text-gray-200 placeholder-gray-500 rounded-xl pl-9 pr-4 py-2 focus:outline-none focus:border-vlc-orange focus:ring-1 focus:ring-vlc-orange transition-all"
+              className="w-full bg-white border border-neutral-200 text-xs text-neutral-900 placeholder-neutral-400 rounded-full pl-9 pr-4 py-2 focus:outline-none focus:border-[#d4ff00] focus:ring-2 focus:ring-[#d4ff00]/40 transition-all shadow-2xs"
             />
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+            <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-2.5" />
           </form>
 
-          {/* DhakaFlix Live Indicator */}
-          <div
-            title={`DhakaFlix Server: ${dfAvailable ? 'Online' : 'Offline'}`}
-            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border bg-amber-500/10 border-amber-500/30 text-amber-400 text-xs font-mono font-medium"
-          >
-            <Server className="w-3.5 h-3.5 text-vlc-orange" />
-            <span>DhakaFlix</span>
-            <span className={`w-1.5 h-1.5 rounded-full ${dfAvailable ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
-            {itemCount > 0 && <span className="text-[10px] text-gray-400 font-sans">({itemCount})</span>}
-          </div>
-
-          {/* Theme Toggle */}
+          {/* Mobile Search Toggle Button */}
           <button
-            onClick={onThemeToggle}
-            title="Toggle theme"
-            className="p-2 text-gray-400 hover:text-white rounded-xl hover:bg-bdstream-surface border border-transparent hover:border-bdstream-border transition-colors"
+            onClick={() => setShowMobileSearch(!showMobileSearch)}
+            className="md:hidden p-2 rounded-full bg-white border border-neutral-200 text-neutral-700 hover:text-black shadow-2xs transition-colors"
+            title="Search"
           >
-            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            <Search className="w-4 h-4" />
           </button>
+
+          {/* Source Live Indicators (Pill Style) */}
+          <div className="hidden lg:flex items-center gap-1.5">
+            <span
+              title={`DhakaFlix: ${dfAvailable ? 'Online' : 'Offline'}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-neutral-200/90 bg-white text-neutral-700 text-[11px] font-mono hover:border-neutral-300 shadow-2xs transition-colors"
+            >
+              <Server className="w-3 h-3 text-amber-500" />
+              <span>DhakaFlix</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${dfAvailable ? 'bg-emerald-500' : 'bg-red-500'}`} />
+            </span>
+            <span
+              title={`CinePlex: ${cpAvailable ? 'Online' : 'Offline'}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-neutral-200/90 bg-white text-neutral-700 text-[11px] font-mono hover:border-neutral-300 shadow-2xs transition-colors"
+            >
+              <Server className="w-3 h-3 text-cyan-600" />
+              <span>CinePlex</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${cpAvailable ? 'bg-emerald-500' : 'bg-red-500'}`} />
+            </span>
+            <span
+              title={`BAS Play: ${bpAvailable ? 'Online' : 'Offline'}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-neutral-200/90 bg-white text-neutral-700 text-[11px] font-mono hover:border-neutral-300 shadow-2xs transition-colors"
+            >
+              <Server className="w-3 h-3 text-[#709900]" />
+              <span>BAS Play</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${bpAvailable ? 'bg-[#709900]' : 'bg-red-500'}`} />
+            </span>
+          </div>
         </div>
       </div>
+
+      {/* Expandable Mobile Search Bar */}
+      {showMobileSearch && (
+        <div className="md:hidden px-3 py-2.5 bg-white border-t border-neutral-200 shadow-md animate-fade-in">
+          <form onSubmit={handleSearchSubmit} className="relative w-full">
+            <input
+              type="text"
+              autoFocus
+              placeholder="Search movies & series..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full bg-neutral-50 border border-neutral-200 text-xs text-neutral-900 placeholder-neutral-400 rounded-full pl-9 pr-16 py-2.5 focus:outline-none focus:border-[#d4ff00] focus:ring-2 focus:ring-[#d4ff00]/40"
+            />
+            <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-3" />
+            <button
+              type="submit"
+              className="absolute right-1.5 top-1.5 px-3.5 py-1 bg-[#d4ff00] hover:bg-[#c4ec00] text-black text-xs font-bold rounded-full shadow-2xs"
+            >
+              Go
+            </button>
+          </form>
+        </div>
+      )}
     </header>
   );
 };

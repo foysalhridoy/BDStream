@@ -1,4 +1,4 @@
-export type SourceId = 'dhakaflix';
+export type SourceId = 'dhakaflix' | 'cineplex' | 'basplay';
 export type MediaType = 'movie' | 'series';
 
 export interface MediaItem {
@@ -61,6 +61,7 @@ export interface PlaybackDescriptor {
   supportsRangeRequests: boolean;
   subtitles: SubtitleTrack[];
   availableQualities: string[];
+  posterUrl?: string;
 }
 
 export interface SourceHealth {
@@ -82,6 +83,7 @@ export interface CatalogQueryOptions {
   type?: MediaType | 'all';
   category?: string;
   search?: string;
+  letter?: string;
   year?: number;
   sortBy?: 'discoveredAt' | 'title' | 'year';
   sortOrder?: 'asc' | 'desc';

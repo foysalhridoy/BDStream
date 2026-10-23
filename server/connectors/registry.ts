@@ -1,4 +1,6 @@
 import { DhakaFlixConnector } from './dhakaflix.js';
+import { CineplexConnector } from './cineplex.js';
+import { BasPlayConnector } from './basplay.js';
 import {
   CatalogQueryOptions,
   CatalogResult,
@@ -10,27 +12,78 @@ import {
 
 export class SourceRegistry {
   private dhakaflix: DhakaFlixConnector;
+  private cineplex: CineplexConnector;
+  private basplay: BasPlayConnector;
 
   constructor() {
     this.dhakaflix = new DhakaFlixConnector();
+    this.cineplex = new CineplexConnector();
+    this.basplay = new BasPlayConnector();
   }
 
   public getDhakaFlix(): DhakaFlixConnector {
     return this.dhakaflix;
   }
 
+  public getCinePlex(): CineplexConnector {
+    return this.cineplex;
+  }
+
+  public getBasPlay(): BasPlayConnector {
+    return this.basplay;
+  }
+
   public async getSourcesHealth(): Promise<Record<string, SourceHealth>> {
-    const dfHealth = await this.dhakaflix.checkAvailability();
+    const [dfHealth, cpHealth, bpHealth] = await Promise.allSettled([
+      this.dhakaflix.checkAvailability(),
+      this.cineplex.checkAvailability(),
+      this.basplay.checkAvailability()
+    ]);
+
     return {
-      dhakaflix: dfHealth
+      dhakaflix: dfHealth.status === 'fulfilled' ? dfHealth.value : {
+        id: 'dhakaflix',
+        name: 'DhakaFlix Portal',
+        baseUrl: 'http://172.16.50.4/',
+        isAccessible: false,
+        latencyMs: 0,
+        requiresSession: false,
+        itemCount: 0,
+        message: 'Offline',
+        lastChecked: new Date().toISOString()
+      },
+      cineplex: cpHealth.status === 'fulfilled' ? cpHealth.value : {
+        id: 'cineplex',
+        name: 'CinePlex BD',
+        baseUrl: 'http://cineplexbd.net/',
+        isAccessible: false,
+        latencyMs: 0,
+        requiresSession: false,
+        itemCount: 0,
+        message: 'Offline',
+        lastChecked: new Date().toISOString()
+      },
+      basplay: bpHealth.status === 'fulfilled' ? bpHealth.value : {
+        id: 'basplay',
+        name: 'BAS Play (10.20.30.40)',
+        baseUrl: 'http://10.20.30.40/',
+        isAccessible: false,
+        latencyMs: 0,
+        requiresSession: false,
+        itemCount: 0,
+        message: 'Offline',
+        lastChecked: new Date().toISOString()
+      }
     };
   }
 
   public async getCatalog(options: CatalogQueryOptions = {}): Promise<CatalogResult> {
     const {
+      source = 'all',
       type = 'all',
       category,
       search,
+      letter,
       year,
       sortBy = 'discoveredAt',
       sortOrder = 'desc',
@@ -40,10 +93,33 @@ export class SourceRegistry {
 
     let allItems: MediaItem[] = [];
 
-    try {
-      allItems = await this.dhakaflix.getCatalog(options);
-    } catch (err) {
-      console.error('[Registry] DhakaFlix catalog fetch error:', err);
+    const [dfRes, cpRes, bpRes] = await Promise.allSettled([
+      (source === 'all' || source === 'dhakaflix') ? this.dhakaflix.getCatalog(options) : Promise.resolve([]),
+      (source === 'all' || source === 'cineplex') ? this.cineplex.getCatalog(options) : Promise.resolve([]),
+      (source === 'all' || source === 'basplay') ? this.basplay.getCatalog(options) : Promise.resolve([])
+    ]);
+
+    if (dfRes.status === 'fulfilled') allItems.push(...dfRes.value);
+    if (cpRes.status === 'fulfilled') allItems.push(...cpRes.value);
+    if (bpRes.status === 'fulfilled') allItems.push(...bpRes.value);
+
+    // If searching, execute live database search on BAS Play and Cineplex to find any available movies/series
+    if (search && search.trim()) {
+      const q = search.trim();
+      const liveSearches = await Promise.allSettled([
+        (source === 'all' || source === 'basplay') ? this.basplay.search(q) : Promise.resolve([]),
+        (source === 'all' || source === 'cineplex') ? this.cineplex.search(q) : Promise.resolve([])
+      ]);
+      if (liveSearches[0].status === 'fulfilled') allItems.push(...liveSearches[0].value);
+      if (liveSearches[1].status === 'fulfilled') allItems.push(...liveSearches[1].value);
+
+      // Deduplicate by ID
+      const seenIds = new Set<string>();
+      allItems = allItems.filter(item => {
+        if (seenIds.has(item.id)) return false;
+        seenIds.add(item.id);
+        return true;
+      });
     }
 
     const categoriesSet = new Set<string>();
@@ -57,6 +133,10 @@ export class SourceRegistry {
 
     let filtered = allItems;
 
+    if (source !== 'all') {
+      filtered = filtered.filter(item => item.source === source);
+    }
+
     if (type !== 'all') {
       filtered = filtered.filter(item => item.type === type);
     }
@@ -67,6 +147,15 @@ export class SourceRegistry {
 
     if (year) {
       filtered = filtered.filter(item => item.year === year);
+    }
+
+    if (letter && letter !== 'All') {
+      if (letter === '#') {
+        filtered = filtered.filter(item => !/^[a-zA-Z]/.test(item.title.trim()));
+      } else {
+        const char = letter.trim().toUpperCase();
+        filtered = filtered.filter(item => item.title.trim().toUpperCase().startsWith(char));
+      }
     }
 
     if (search && search.trim()) {
@@ -106,17 +195,37 @@ export class SourceRegistry {
       categories,
       years,
       sourcesActive: {
-        dhakaflix: allItems.length > 0
+        dhakaflix: (dfRes.status === 'fulfilled' && dfRes.value.length > 0) || false,
+        cineplex: (cpRes.status === 'fulfilled' && cpRes.value.length > 0) || false,
+        basplay: (bpRes.status === 'fulfilled' && bpRes.value.length > 0) || false
       }
     };
   }
 
+  private resolveConnector(itemId: string) {
+    try {
+      let decoded = '';
+      try {
+        decoded = Buffer.from(itemId, 'base64url').toString('utf8');
+      } catch {
+        decoded = Buffer.from(itemId, 'base64').toString('utf8');
+      }
+      if (decoded.startsWith('cineplex:')) return this.cineplex;
+      if (decoded.startsWith('basplay:')) return this.basplay;
+    } catch {
+      // default
+    }
+    return this.dhakaflix;
+  }
+
   public async getItemDetails(itemId: string): Promise<MediaItemDetails> {
-    return this.dhakaflix.getItemDetails(itemId);
+    const connector = this.resolveConnector(itemId);
+    return connector.getItemDetails(itemId);
   }
 
   public async resolvePlayback(itemId: string, versionId?: string): Promise<PlaybackDescriptor> {
-    return this.dhakaflix.resolvePlayback(itemId, versionId);
+    const connector = this.resolveConnector(itemId);
+    return connector.resolvePlayback(itemId, versionId);
   }
 }
 

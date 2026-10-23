@@ -16,7 +16,9 @@ import {
   AlertCircle,
   RefreshCw,
   Sliders,
-  Check
+  Check,
+  Headphones,
+  PictureInPicture2
 } from 'lucide-react';
 import Hls from 'hls.js';
 import { PlaybackDescriptor, SubtitleTrack, WatchProgress } from '../../types/media';
@@ -47,6 +49,8 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<number | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const isScrubbingRef = useRef<boolean>(false);
 
   // Playback state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -74,11 +78,22 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
   const [subtitleDelay, setSubtitleDelay] = useState<number>(0); // ms
   const [subtitleBlobUrl, setSubtitleBlobUrl] = useState<string | null>(null);
 
+  // Audio Tracks
+  const [audioTracks, setAudioTracks] = useState<{ id: string; label: string; language: string; enabled: boolean }[]>([]);
+  const [showAudioMenu, setShowAudioMenu] = useState(false);
+
   // Dropdowns & panels
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showSubtitleMenu, setShowSubtitleMenu] = useState(false);
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [audioBoost, setAudioBoost] = useState(false);
+
+  // Web Audio Context for 5.1/Low Audio Boost
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
 
   // Stream stats
   const [stats, setStats] = useState({
@@ -87,9 +102,6 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
     decodedFrames: 0,
     droppedFrames: 0
   });
-
-  // Resume notification state
-  const [resumePrompt, setResumePrompt] = useState<{ time: number } | null>(null);
 
   // 1. Initial setup & stream binding (HLS vs Progressive HTTP)
   useEffect(() => {
@@ -108,8 +120,19 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
           enableWorker: true,
           lowLatencyMode: true
         });
+        hlsRef.current = hls;
         hls.loadSource(streamUrl);
         hls.attachMedia(video);
+        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
+          if (data.audioTracks && data.audioTracks.length > 0) {
+            setAudioTracks(data.audioTracks.map((t, idx) => ({
+              id: String(t.id !== undefined ? t.id : idx),
+              label: t.name || `Track ${idx + 1}`,
+              language: t.lang || '',
+              enabled: idx === hls?.audioTrack
+            })));
+          }
+        });
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
             setError(`Stream error: ${data.details}`);
@@ -123,23 +146,30 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
       video.src = streamUrl;
     }
 
-    // Check saved progress
-    const saved = StorageService.getProgress(playback.itemId);
-    if (saved && saved.currentTime > 10 && saved.currentTime < (saved.duration - 20)) {
-      setResumePrompt({ time: saved.currentTime });
-    } else if (initialTime > 0) {
+    // Check saved progress - separate by episode URL so series episodes don't share timestamps
+    const isSeriesEpisode = Boolean(playback.directUrl && (playback.title.includes('S0') || playback.title.includes('S1') || playback.title.includes('Episode') || playback.title.includes('E0') || playback.title.includes('E1')));
+    const saved = isSeriesEpisode && playback.directUrl
+      ? StorageService.getEpisodeProgress(playback.itemId, playback.directUrl)
+      : StorageService.getProgress(playback.itemId);
+
+    if (initialTime > 0) {
       video.currentTime = initialTime;
+    } else if (saved && saved.currentTime > 10 && saved.currentTime < (saved.duration - 20)) {
+      video.currentTime = saved.currentTime;
+    } else {
+      video.currentTime = 0;
     }
 
     return () => {
       if (hls) {
         hls.destroy();
+        hlsRef.current = null;
       }
       if (subtitleBlobUrl) {
         URL.revokeObjectURL(subtitleBlobUrl);
       }
     };
-  }, [playback, useDirectStream]);
+  }, [playback, useDirectStream, initialTime]);
 
   // 2. Auto-hide controls timer
   const resetControlsTimer = useCallback(() => {
@@ -153,6 +183,8 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
         setShowSpeedMenu(false);
         setShowSubtitleMenu(false);
         setShowQualityMenu(false);
+        setShowAudioMenu(false);
+        setShowSettingsMenu(false);
       }, 3000);
     }
   }, [isPlaying]);
@@ -161,10 +193,46 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
     resetControlsTimer();
   };
 
+  // Audio Booster & Stereo Dialogue Enhancer
+  const toggleAudioBoost = () => {
+    try {
+      const video = videoRef.current;
+      if (!video) return;
+
+      if (!audioCtxRef.current) {
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const ctx = new AudioCtx();
+        audioCtxRef.current = ctx;
+        const source = ctx.createMediaElementSource(video);
+        sourceNodeRef.current = source;
+        const gain = ctx.createGain();
+        gainNodeRef.current = gain;
+        source.connect(gain);
+        gain.connect(ctx.destination);
+      }
+
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {});
+      }
+
+      if (gainNodeRef.current) {
+        const nextBoost = !audioBoost;
+        gainNodeRef.current.gain.value = nextBoost ? 2.5 : 1.0;
+        setAudioBoost(nextBoost);
+      }
+    } catch (e) {
+      console.warn('Audio boost warning:', (e as Error).message);
+    }
+  };
+
   // 3. Play / Pause toggle
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;
+
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume().catch(() => {});
+    }
 
     if (video.paused) {
       video.play().catch(err => {
@@ -247,25 +315,58 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
   };
 
   // 9. Timeline scrub events
-  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  const updateScrubTime = (clientX: number) => {
     if (!timelineRef.current || !videoRef.current || duration === 0) return;
     const rect = timelineRef.current.getBoundingClientRect();
-    const pos = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    const pos = clamp((clientX - rect.left) / rect.width, 0, 1);
     const targetTime = pos * duration;
     videoRef.current.currentTime = targetTime;
     setCurrentTime(targetTime);
+    setHoverPosition(pos * 100);
+    setHoverTime(targetTime);
   };
 
-  const handleTimelineMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleTimelinePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    isScrubbingRef.current = true;
+    try {
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    } catch {}
+    updateScrubTime(e.clientX);
+    resetControlsTimer();
+  };
+
+  const handleTimelinePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!timelineRef.current || duration === 0) return;
     const rect = timelineRef.current.getBoundingClientRect();
     const pos = clamp((e.clientX - rect.left) / rect.width, 0, 1);
     setHoverPosition(pos * 100);
     setHoverTime(pos * duration);
+
+    if (isScrubbingRef.current) {
+      updateScrubTime(e.clientX);
+    }
   };
 
-  const handleTimelineMouseLeave = () => {
-    setHoverTime(null);
+  const handleTimelinePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isScrubbingRef.current) {
+      isScrubbingRef.current = false;
+      try {
+        (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+      } catch {}
+      // Keep hover time visible briefly so user sees skipped target
+      setTimeout(() => {
+        if (!isScrubbingRef.current) {
+          setHoverTime(null);
+        }
+      }, 1000);
+    }
+  };
+
+  const handleTimelinePointerLeave = () => {
+    if (!isScrubbingRef.current) {
+      setHoverTime(null);
+    }
   };
 
   // 10. Subtitle loading & delay sync
@@ -390,6 +491,11 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
           e.preventDefault();
           changeSpeed(Math.min(2, playbackSpeed + 0.25));
           break;
+        case 'p':
+        case 'P': // Toggle Picture-in-Picture
+          e.preventDefault();
+          togglePiP();
+          break;
         case 'Escape':
           if (isFullscreen) {
             document.exitFullscreen().catch(() => {});
@@ -414,6 +520,35 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
       videoWidth: video.videoWidth,
       videoHeight: video.videoHeight
     }));
+
+    if ((video as any).audioTracks) {
+      const at = (video as any).audioTracks;
+      const tracks: { id: string; label: string; language: string; enabled: boolean }[] = [];
+      for (let i = 0; i < at.length; i++) {
+        tracks.push({
+          id: String(i),
+          label: at[i].label || `Audio Track ${i + 1}`,
+          language: at[i].language || '',
+          enabled: at[i].enabled
+        });
+      }
+      if (tracks.length > 0) setAudioTracks(tracks);
+    }
+  };
+
+  const switchAudioTrack = (index: number) => {
+    if (hlsRef.current) {
+      hlsRef.current.audioTrack = index;
+    }
+    const video = videoRef.current;
+    if (video && (video as any).audioTracks) {
+      const tracks = (video as any).audioTracks;
+      for (let i = 0; i < tracks.length; i++) {
+        tracks[i].enabled = i === index;
+      }
+    }
+    setAudioTracks(prev => prev.map((t, idx) => ({ ...t, enabled: idx === index })));
+    setShowAudioMenu(false);
   };
 
   const onTimeUpdateHandler = () => {
@@ -438,10 +573,15 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
       title: playback.title,
       currentTime: cur,
       duration: video.duration || 0,
+      posterUrl: playback.posterUrl,
       source: playback.source,
       lastWatchedAt: new Date().toISOString()
     };
-    StorageService.saveProgress(progress);
+    if (playback.directUrl) {
+      StorageService.saveEpisodeProgress(playback.itemId, playback.directUrl, progress);
+    } else {
+      StorageService.saveProgress(progress);
+    }
   };
 
   const onWaitingHandler = () => setIsBuffering(true);
@@ -452,6 +592,9 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
   const onPauseHandler = () => setIsPlaying(false);
   const onEndedHandler = () => {
     setIsPlaying(false);
+    if (playback.directUrl) {
+      StorageService.clearProgress(`${playback.itemId}:::${playback.directUrl}`);
+    }
     StorageService.clearProgress(playback.itemId);
     if (onEnded) onEnded();
   };
@@ -466,20 +609,6 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
     if (code === 4) msg = 'Source format is not supported by your browser.';
     setError(msg);
     setIsBuffering(false);
-  };
-
-  // Resume playback action
-  const applyResume = () => {
-    if (resumePrompt && videoRef.current) {
-      videoRef.current.currentTime = resumePrompt.time;
-      videoRef.current.play().catch(() => {});
-      setIsPlaying(true);
-      setResumePrompt(null);
-    }
-  };
-
-  const dismissResume = () => {
-    setResumePrompt(null);
   };
 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -522,8 +651,8 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
       {isBuffering && !error && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none z-10">
           <div className="flex flex-col items-center gap-3">
-            <div className="w-12 h-12 border-4 border-vlc-orange border-t-transparent rounded-full animate-spin" />
-            <span className="text-xs font-mono text-gray-300">Buffering Stream...</span>
+            <div className="w-12 h-12 border-4 border-[#d4ff00] border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs font-mono text-neutral-300">Buffering Stream...</span>
           </div>
         </div>
       )}
@@ -545,7 +674,7 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
                   setError(null);
                   setUseDirectStream(!useDirectStream);
                 }}
-                className="px-4 py-2 bg-vlc-orange hover:bg-vlc-darkOrange text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
+                className="px-4 py-2 bg-[#d4ff00] hover:bg-[#c4ec00] text-black text-xs font-extrabold rounded-full flex items-center gap-1.5 transition-colors shadow-lg shadow-lime-500/20"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 {useDirectStream ? 'Try Relay Stream' : 'Switch to Direct ISP Stream'}
@@ -575,113 +704,91 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
         </div>
       )}
 
-      {/* Resume Playing Toast */}
-      {resumePrompt && (
-        <div className="absolute top-4 left-4 z-20 bg-bdstream-surface/95 border border-vlc-orange/50 text-white p-3 rounded-lg shadow-xl backdrop-blur-md flex items-center gap-4 animate-fade-in">
-          <div>
-            <p className="text-xs font-medium text-vlc-orange uppercase tracking-wider">Resume Playback</p>
-            <p className="text-sm text-gray-200">
-              Continue from <span className="font-mono font-semibold">{formatTime(resumePrompt.time)}</span>?
-            </p>
+      {/* Top Bar (Fullscreen & Cinema Mode - clean & uncluttered) */}
+      {(isFullscreen || isCinemaMode) && (
+        <div
+          className={`absolute top-0 left-0 right-0 p-2 sm:p-4 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-center justify-between text-white transition-opacity duration-300 z-20 ${
+            controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+        >
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="px-2.5 py-1 sm:px-3 sm:py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-semibold backdrop-blur-md transition-colors flex-shrink-0"
+                title="Back"
+              >
+                &larr; Back
+              </button>
+            )}
+            <div className="min-w-0">
+              <h2 className="text-xs sm:text-base font-semibold text-white drop-shadow truncate max-w-[140px] xs:max-w-[220px] sm:max-w-md md:max-w-xl">
+                {playback.title}
+              </h2>
+              <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-neutral-300 font-mono truncate">
+                <span className="uppercase text-[#d4ff00] font-extrabold">
+                  {playback.source}
+                </span>
+                <span>&bull;</span>
+                <span className="truncate">{playback.mimeType}</span>
+                {stats.videoHeight > 0 && (
+                  <>
+                    <span>&bull;</span>
+                    <span className="bg-white/20 px-1.5 py-0.2 rounded text-[10px]">
+                      {stats.videoHeight}p
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            {onToggleCinemaMode && (
+              <button
+                onClick={onToggleCinemaMode}
+                title={isCinemaMode ? 'Exit Cinema Mode' : 'Cinema Mode'}
+                className="p-1.5 sm:p-2 hover:bg-white/20 rounded-lg transition-colors text-gray-200"
+              >
+                <Tv className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            )}
             <button
-              onClick={applyResume}
-              className="px-3 py-1 bg-vlc-orange hover:bg-vlc-darkOrange text-white text-xs font-semibold rounded transition-colors"
+              onClick={() => setShowStatsModal(true)}
+              title="Stream & Codec Information (VLC Media Info)"
+              className="p-1.5 sm:p-2 hover:bg-white/20 rounded-lg transition-colors text-gray-200"
             >
-              Resume
-            </button>
-            <button
-              onClick={dismissResume}
-              className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-gray-300 text-xs rounded transition-colors"
-            >
-              Start Over
+              <Info className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
       )}
-
-      {/* Top Bar (Title & Technical Info button) */}
-      <div
-        className={`absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between text-white transition-opacity duration-300 z-20 ${
-          controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
-      >
-        <div className="flex items-center gap-3">
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-1.5 hover:bg-white/15 rounded-md transition-colors"
-              title="Back"
-            >
-              &larr; Back
-            </button>
-          )}
-          <div>
-            <h2 className="text-base font-semibold text-white drop-shadow truncate max-w-xl">
-              {playback.title}
-            </h2>
-            <div className="flex items-center gap-2 text-xs text-gray-300 font-mono">
-              <span className="uppercase text-vlc-orange font-bold">
-                {playback.source}
-              </span>
-              <span>&bull;</span>
-              <span>{playback.mimeType}</span>
-              {stats.videoHeight > 0 && (
-                <>
-                  <span>&bull;</span>
-                  <span className="bg-white/20 px-1.5 py-0.2 rounded text-[10px]">
-                    {stats.videoHeight}p
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {onToggleCinemaMode && (
-            <button
-              onClick={onToggleCinemaMode}
-              title={isCinemaMode ? 'Exit Cinema Mode' : 'Cinema Mode'}
-              className="p-2 hover:bg-white/20 rounded-lg transition-colors text-gray-200"
-            >
-              <Tv className="w-5 h-5" />
-            </button>
-          )}
-          <button
-            onClick={() => setShowStatsModal(true)}
-            title="Stream & Codec Information (VLC Media Info)"
-            className="p-2 hover:bg-white/20 rounded-lg transition-colors text-gray-200"
-          >
-            <Info className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
 
       {/* Center Screen Big Play Icon Pulse (when paused) */}
       {!isPlaying && !isBuffering && !error && (
         <button
           onClick={togglePlay}
-          className="absolute z-10 w-20 h-20 bg-vlc-orange/90 hover:bg-vlc-orange text-white rounded-full flex items-center justify-center shadow-2xl transition-transform hover:scale-110 active:scale-95"
+          className="absolute z-10 w-16 h-16 sm:w-20 sm:h-20 bg-[#d4ff00] hover:bg-[#c4ec00] text-black rounded-full flex items-center justify-center shadow-2xl shadow-lime-500/30 transition-transform hover:scale-110 active:scale-95"
         >
-          <Play className="w-10 h-10 ml-1 fill-white" />
+          <Play className="w-8 h-8 sm:w-10 sm:h-10 ml-1 fill-black text-black" />
         </button>
       )}
 
       {/* VLC Toolbar & Bottom Controls */}
       <div
-        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-4 transition-opacity duration-300 z-20 ${
+        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-2 sm:p-4 transition-opacity duration-300 z-20 overflow-visible ${
           controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
         {/* Timeline Scrub Bar */}
         <div
           ref={timelineRef}
-          onClick={handleTimelineClick}
-          onMouseMove={handleTimelineMouseMove}
-          onMouseLeave={handleTimelineMouseLeave}
-          className="relative h-2 bg-gray-700/60 rounded-full cursor-pointer mb-3 group/track hover:h-3 transition-all"
+          onPointerDown={handleTimelinePointerDown}
+          onPointerMove={handleTimelinePointerMove}
+          onPointerUp={handleTimelinePointerUp}
+          onPointerCancel={handleTimelinePointerUp}
+          onPointerLeave={handleTimelinePointerLeave}
+          className="relative h-2 sm:h-2.5 bg-gray-700/60 rounded-full cursor-pointer mb-2.5 sm:mb-3 group/track hover:h-3 sm:hover:h-3.5 transition-all select-none"
         >
           {/* Buffered range */}
           <div
@@ -690,65 +797,67 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
           />
           {/* Played progress */}
           <div
-            className="absolute top-0 bottom-0 left-0 bg-vlc-orange rounded-full"
+            className="absolute top-0 bottom-0 left-0 bg-[#d4ff00] rounded-full shadow-[0_0_8px_rgba(212,255,0,0.5)]"
             style={{ width: `${progressPercent}%` }}
           >
             {/* Scrubber thumb knob */}
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-vlc-orange rounded-full shadow-md scale-0 group-hover/track:scale-100 transition-transform" />
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 bg-white border-2 border-[#d4ff00] rounded-full shadow-md scale-100 sm:scale-0 sm:group-hover/track:scale-100 transition-transform" />
           </div>
 
-          {/* Hover Time Preview Tooltip */}
+          {/* Hover / Scrub Time Preview Tooltip (Unobstructed & High-Contrast) */}
           {hoverTime !== null && (
             <div
-              className="absolute -top-7 -translate-x-1/2 bg-gray-900 border border-gray-700 text-white text-[11px] font-mono px-2 py-0.5 rounded shadow pointer-events-none"
-              style={{ left: `${hoverPosition}%` }}
+              className="absolute -top-11 -translate-x-1/2 bg-neutral-900/95 backdrop-blur-md border border-[#d4ff00] text-[#d4ff00] text-xs font-mono font-black px-2.5 py-1 rounded-lg shadow-[0_4px_16px_rgba(0,0,0,0.85)] pointer-events-none z-50 select-none flex items-center gap-1"
+              style={{ left: `${Math.min(96, Math.max(4, hoverPosition))}%` }}
             >
-              {formatTime(hoverTime)}
+              <span>{formatTime(hoverTime)}</span>
+              {/* Tooltip downward pointing arrow */}
+              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-neutral-900 border-r border-b border-[#d4ff00] rotate-45" />
             </div>
           )}
         </div>
 
         {/* Control Buttons Row */}
-        <div className="flex items-center justify-between text-white">
-          {/* Left Controls: Play/Pause, Seek buttons, Volume, Time */}
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between text-white gap-2">
+          {/* Left Controls: Play/Pause, Volume, Time */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             <button
               onClick={togglePlay}
-              className="p-2 hover:bg-white/20 rounded-lg transition-colors text-white"
+              className="p-1.5 sm:p-2 hover:bg-white/20 rounded-lg transition-colors text-white flex-shrink-0"
               title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
             >
-              {isPlaying ? <Pause className="w-5 h-5 fill-white" /> : <Play className="w-5 h-5 fill-white" />}
+              {isPlaying ? <Pause className="w-4 h-4 sm:w-5 sm:h-5 fill-white" /> : <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-white" />}
             </button>
 
-            {/* Quick Seek buttons */}
+            {/* Quick Seek buttons (hidden on phone screens to prevent overflow, user scrubs on timeline) */}
             <button
               onClick={() => seekRelative(-10)}
-              className="p-1.5 hover:bg-white/15 rounded-lg text-gray-300 hover:text-white transition-colors"
+              className="p-1.5 hover:bg-white/15 rounded-lg text-gray-300 hover:text-white transition-colors hidden sm:inline-flex"
               title="Rewind 10 seconds (Left Arrow)"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
             <button
               onClick={() => seekRelative(10)}
-              className="p-1.5 hover:bg-white/15 rounded-lg text-gray-300 hover:text-white transition-colors"
+              className="p-1.5 hover:bg-white/15 rounded-lg text-gray-300 hover:text-white transition-colors hidden sm:inline-flex"
               title="Forward 10 seconds (Right Arrow)"
             >
               <RotateCw className="w-4 h-4" />
             </button>
 
             {/* Volume slider & mute */}
-            <div className="flex items-center gap-2 group/volume">
+            <div className="flex items-center gap-1 sm:gap-2 group/volume flex-shrink-0">
               <button
                 onClick={toggleMute}
-                className="p-1.5 hover:bg-white/15 rounded-lg text-gray-200 transition-colors"
+                className="p-1 sm:p-1.5 hover:bg-white/15 rounded-lg text-gray-200 transition-colors"
                 title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
               >
                 {isMuted || volume === 0 ? (
-                  <VolumeX className="w-5 h-5 text-red-400" />
+                  <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-red-400" />
                 ) : volume < 0.5 ? (
-                  <Volume1 className="w-5 h-5" />
+                  <Volume1 className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : (
-                  <Volume2 className="w-5 h-5" />
+                  <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
                 )}
               </button>
               <input
@@ -758,29 +867,29 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
                 step="0.05"
                 value={isMuted ? 0 : volume}
                 onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-                className="w-16 sm:w-24 h-1.5 bg-gray-700 accent-vlc-orange rounded-lg cursor-pointer"
+                className="hidden md:inline-block w-16 sm:w-24 h-1.5 bg-neutral-700 accent-[#d4ff00] rounded-lg cursor-pointer"
               />
-              <span className="text-[11px] font-mono text-gray-400 w-8">
+              <span className="hidden md:inline text-[11px] font-mono text-neutral-400 w-8">
                 {isMuted ? '0%' : `${Math.round(volume * 100)}%`}
               </span>
             </div>
 
-            {/* VLC Time Display (Click to toggle remaining time) */}
+            {/* High-Contrast Crystal-Clear VLC Time Display Badge */}
             <div
               onClick={() => setShowRemainingTime(!showRemainingTime)}
-              title="Click to toggle remaining time"
-              className="text-xs font-mono text-gray-300 cursor-pointer hover:text-vlc-orange transition-colors select-none"
+              title="Click to toggle elapsed / remaining time"
+              className="shrink-0 flex items-center bg-black/80 hover:bg-black backdrop-blur-md px-2 sm:px-2.5 py-1 rounded-lg border border-white/20 hover:border-[#d4ff00]/60 text-xs font-mono shadow-md cursor-pointer transition-all select-none whitespace-nowrap"
             >
-              <span>{formatTime(currentTime)}</span>
-              <span className="mx-1 text-gray-500">/</span>
-              <span>
+              <span className="text-[#d4ff00] font-black tracking-tight">{formatTime(currentTime)}</span>
+              <span className="mx-1 text-white/40 font-bold">/</span>
+              <span className="text-white font-bold tracking-tight">
                 {showRemainingTime ? `-${formatTime(Math.max(0, duration - currentTime))}` : formatTime(duration)}
               </span>
             </div>
           </div>
 
-          {/* Right Controls: Subtitles, Speed, Qualities, PiP, Fullscreen */}
-          <div className="flex items-center gap-2 relative">
+          {/* Right Controls: Subtitles, Speed, Qualities, PiP, Audio Boost, Fullscreen */}
+          <div className="flex items-center gap-0.5 xs:gap-1 sm:gap-2 relative flex-shrink-0">
             {/* Subtitle Selector */}
             <div className="relative">
               <button
@@ -788,20 +897,22 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
                   setShowSubtitleMenu(!showSubtitleMenu);
                   setShowSpeedMenu(false);
                   setShowQualityMenu(false);
+                  setShowAudioMenu(false);
+                  setShowSettingsMenu(false);
                 }}
-                className={`p-2 rounded-lg transition-colors ${
+                className={`p-1.5 sm:p-2 rounded-lg transition-colors ${
                   activeSubtitleId
-                    ? 'text-vlc-orange bg-vlc-orange/20 border border-vlc-orange/40'
-                    : 'text-gray-300 hover:text-white hover:bg-white/15'
+                    ? 'text-[#d4ff00] bg-[#d4ff00]/15 border border-[#d4ff00]/40'
+                    : 'text-neutral-300 hover:text-white hover:bg-white/15'
                 }`}
                 title="Subtitles (C)"
               >
-                <Subtitles className="w-5 h-5" />
+                <Subtitles className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
               {/* Subtitle Menu Popup */}
               {showSubtitleMenu && (
-                <div className="absolute bottom-10 right-0 w-64 bg-bdstream-surface border border-bdstream-border rounded-xl shadow-2xl p-3 text-xs z-30">
+                <div className="absolute bottom-11 right-0 w-64 max-w-[85vw] bg-bdstream-surface border border-bdstream-border rounded-xl shadow-2xl p-3 text-xs z-30">
                   <div className="font-semibold text-gray-200 mb-2 pb-1 border-b border-gray-700 flex justify-between items-center">
                     <span>Subtitles</span>
                     {activeSubtitleId && (
@@ -824,7 +935,7 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
                           onClick={() => selectSubtitle(sub)}
                           className={`w-full text-left px-2 py-1.5 rounded flex items-center justify-between ${
                             activeSubtitleId === sub.id
-                              ? 'bg-vlc-orange text-white'
+                              ? 'bg-[#d4ff00] text-black font-bold'
                               : 'text-gray-300 hover:bg-white/10'
                           }`}
                         >
@@ -838,9 +949,9 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
                   {/* Subtitle Delay Sync */}
                   {activeSubtitleId && (
                     <div className="mb-3 pt-2 border-t border-gray-700">
-                      <div className="flex items-center justify-between text-gray-400 text-[11px] mb-1">
+                      <div className="flex items-center justify-between text-neutral-400 text-[11px] mb-1">
                         <span>Sync Delay:</span>
-                        <span className="font-mono text-vlc-orange">{subtitleDelay}ms</span>
+                        <span className="font-mono text-[#d4ff00]">{subtitleDelay}ms</span>
                       </div>
                       <div className="grid grid-cols-4 gap-1">
                         <button
@@ -885,6 +996,47 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
               )}
             </div>
 
+            {/* Audio Track Selector */}
+            {audioTracks.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setShowAudioMenu(!showAudioMenu);
+                    setShowSubtitleMenu(false);
+                    setShowSpeedMenu(false);
+                    setShowQualityMenu(false);
+                    setShowSettingsMenu(false);
+                  }}
+                  className={`p-1.5 sm:p-2 rounded-lg transition-colors ${
+                    showAudioMenu ? 'text-[#d4ff00] bg-white/10' : 'text-neutral-300 hover:text-white hover:bg-white/15'
+                  }`}
+                  title="Audio Language / Tracks"
+                >
+                  <Headphones className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </button>
+
+                {showAudioMenu && (
+                  <div className="absolute bottom-11 right-0 w-48 max-w-[85vw] bg-bdstream-surface border border-bdstream-border rounded-xl shadow-2xl p-2 text-xs z-30">
+                    <div className="font-semibold text-gray-400 px-2 py-1 text-[10px] uppercase border-b border-gray-700 mb-1">
+                      Audio Tracks
+                    </div>
+                    {audioTracks.map((t, idx) => (
+                      <button
+                        key={t.id}
+                        onClick={() => switchAudioTrack(idx)}
+                        className={`w-full text-left px-2 py-1.5 rounded flex items-center justify-between ${
+                          t.enabled ? 'bg-[#d4ff00] text-black font-bold' : 'text-gray-300 hover:bg-white/10'
+                        }`}
+                      >
+                        <span className="truncate">{t.label || `Track ${idx + 1}`} {t.language ? `(${t.language})` : ''}</span>
+                        {t.enabled && <Check className="w-3 h-3 flex-shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Playback Speed Selector */}
             <div className="relative">
               <button
@@ -892,15 +1044,17 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
                   setShowSpeedMenu(!showSpeedMenu);
                   setShowSubtitleMenu(false);
                   setShowQualityMenu(false);
+                  setShowAudioMenu(false);
+                  setShowSettingsMenu(false);
                 }}
-                className="px-2 py-1 rounded text-xs font-mono font-semibold text-gray-300 hover:text-white hover:bg-white/15 transition-colors"
+                className="px-1.5 py-0.5 sm:px-2 sm:py-1 rounded text-[11px] sm:text-xs font-mono font-semibold text-gray-300 hover:text-white hover:bg-white/15 transition-colors"
                 title="Playback Speed ([ and ])"
               >
                 {playbackSpeed}x
               </button>
 
               {showSpeedMenu && (
-                <div className="absolute bottom-10 right-0 w-32 bg-bdstream-surface border border-bdstream-border rounded-xl shadow-2xl p-1 text-xs z-30">
+                <div className="absolute bottom-11 right-0 w-32 max-w-[80vw] bg-bdstream-surface border border-bdstream-border rounded-xl shadow-2xl p-1 text-xs z-30">
                   <div className="font-semibold text-gray-400 px-2 py-1 text-[10px] uppercase">
                     Speed
                   </div>
@@ -910,7 +1064,7 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
                       onClick={() => changeSpeed(s)}
                       className={`w-full text-left px-2 py-1 rounded flex items-center justify-between ${
                         playbackSpeed === s
-                          ? 'bg-vlc-orange text-white'
+                          ? 'bg-[#d4ff00] text-black font-bold'
                           : 'text-gray-300 hover:bg-white/10'
                       }`}
                     >
@@ -930,14 +1084,16 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
                     setShowQualityMenu(!showQualityMenu);
                     setShowSpeedMenu(false);
                     setShowSubtitleMenu(false);
+                    setShowAudioMenu(false);
+                    setShowSettingsMenu(false);
                   }}
                   className="p-1.5 hover:bg-white/15 rounded-lg text-gray-300 hover:text-white transition-colors"
                   title="Video Quality"
                 >
-                  <Sliders className="w-4 h-4" />
+                  <Sliders className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
                 {showQualityMenu && (
-                  <div className="absolute bottom-10 right-0 w-36 bg-bdstream-surface border border-bdstream-border rounded-xl shadow-2xl p-1 text-xs z-30">
+                  <div className="absolute bottom-11 right-0 w-36 max-w-[80vw] bg-bdstream-surface border border-bdstream-border rounded-xl shadow-2xl p-1 text-xs z-30">
                     <div className="font-semibold text-gray-400 px-2 py-1 text-[10px] uppercase">
                       Stream Quality
                     </div>
@@ -954,22 +1110,152 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
               </div>
             )}
 
-            {/* Picture in Picture */}
+            {/* Player Settings Menu Dropdown (Settings icon no longer pops out PiP window) */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowSettingsMenu(!showSettingsMenu);
+                  setShowSpeedMenu(false);
+                  setShowSubtitleMenu(false);
+                  setShowQualityMenu(false);
+                  setShowAudioMenu(false);
+                }}
+                className={`p-1.5 sm:p-2 rounded-lg transition-colors ${
+                  showSettingsMenu
+                    ? 'text-[#d4ff00] bg-white/15 ring-1 ring-[#d4ff00]/40'
+                    : 'text-gray-300 hover:text-white hover:bg-white/15'
+                }`}
+                title="Playback Settings"
+              >
+                <SettingsIcon
+                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-transform duration-200 ${
+                    showSettingsMenu ? 'rotate-45 text-[#d4ff00]' : ''
+                  }`}
+                />
+              </button>
+
+              {showSettingsMenu && (
+                <div className="absolute bottom-11 right-0 w-64 max-w-[85vw] bg-bdstream-surface border border-bdstream-border rounded-xl shadow-2xl p-2.5 text-xs z-30 divide-y divide-gray-700/60 backdrop-blur-md">
+                  <div className="font-semibold text-gray-200 pb-2 px-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-bold text-white text-[12px]">
+                      <SettingsIcon className="w-3.5 h-3.5 text-[#d4ff00]" />
+                      Player Settings
+                    </span>
+                  </div>
+
+                  {/* Playback Speed */}
+                  <div className="py-2 px-1">
+                    <div className="text-[11px] font-medium text-gray-400 mb-1.5 flex justify-between items-center">
+                      <span>Playback Speed</span>
+                      <span className="font-mono text-[#d4ff00] font-bold">{playbackSpeed}x</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1">
+                      {[0.5, 1, 1.25, 1.5].map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => {
+                            changeSpeed(s);
+                            setShowSettingsMenu(false);
+                          }}
+                          className={`py-1 rounded text-center text-[10px] font-mono transition-colors ${
+                            playbackSpeed === s
+                              ? 'bg-[#d4ff00] text-black font-extrabold shadow-sm'
+                              : 'bg-white/5 hover:bg-white/15 text-gray-300'
+                          }`}
+                        >
+                          {s}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Audio Boost Toggle */}
+                  <div className="py-2 px-1 flex items-center justify-between">
+                    <div>
+                      <div className="text-white font-medium text-[11px]">Audio Boost (250%)</div>
+                      <div className="text-[10px] text-gray-400">Dialogue & Stereo Enhancer</div>
+                    </div>
+                    <button
+                      onClick={toggleAudioBoost}
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
+                        audioBoost
+                          ? 'bg-[#d4ff00] text-black shadow-md shadow-lime-500/20'
+                          : 'bg-white/10 hover:bg-white/20 text-gray-300'
+                      }`}
+                    >
+                      {audioBoost ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+
+                  {/* Picture-in-Picture Option */}
+                  <div className="py-2 px-1">
+                    <button
+                      onClick={() => {
+                        togglePiP();
+                        setShowSettingsMenu(false);
+                      }}
+                      className="w-full flex items-center justify-between text-left px-2 py-1.5 rounded hover:bg-white/10 text-gray-300 hover:text-white transition-colors"
+                    >
+                      <span className="flex items-center gap-2 text-[11px]">
+                        <PictureInPicture2 className="w-3.5 h-3.5 text-gray-400" />
+                        Picture-in-Picture
+                      </span>
+                      <span className="text-[10px] text-gray-500 font-mono">Pop-out</span>
+                    </button>
+                  </div>
+
+                  {/* Media & Codec Information */}
+                  <div className="pt-2 px-1">
+                    <button
+                      onClick={() => {
+                        setShowStatsModal(true);
+                        setShowSettingsMenu(false);
+                      }}
+                      className="w-full flex items-center justify-between text-left px-2 py-1.5 rounded hover:bg-white/10 text-gray-300 hover:text-white transition-colors"
+                    >
+                      <span className="flex items-center gap-2 text-[11px]">
+                        <Info className="w-3.5 h-3.5 text-gray-400" />
+                        Media Information
+                      </span>
+                      <span className="text-[10px] text-[#d4ff00] font-mono">Codec Info</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Picture in Picture dedicated button (with real PiP icon, hidden on small mobile) */}
             <button
               onClick={togglePiP}
-              className="p-2 hover:bg-white/15 rounded-lg text-gray-300 hover:text-white transition-colors hidden sm:block"
-              title="Picture in Picture"
+              className="p-1.5 sm:p-2 hover:bg-white/15 rounded-lg text-gray-300 hover:text-white transition-colors hidden sm:block"
+              title="Picture in Picture (P)"
             >
-              <SettingsIcon className="w-4 h-4" />
+              <PictureInPicture2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </button>
+
+            {/* Audio Boost (Web Audio Dialogue & 5.1 Stereo Booster) */}
+            <button
+              onClick={toggleAudioBoost}
+              className={`p-1.5 sm:p-2 rounded-lg transition-all flex items-center gap-1 text-xs font-semibold ${
+                audioBoost
+                  ? 'text-black bg-[#d4ff00] font-extrabold shadow-lg shadow-lime-500/30 ring-1 ring-lime-400'
+                  : 'text-gray-300 hover:text-white hover:bg-white/15'
+              }`}
+              title={audioBoost ? 'Audio Boost: ON (250% + Stereo Dialogue Enhanced)' : 'Audio Boost: OFF (Click to boost low audio / dialogue)'}
+            >
+              <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden lg:inline font-mono text-[11px] font-bold">
+                {audioBoost ? 'Boost 250%' : 'Audio Boost'}
+              </span>
             </button>
 
             {/* Fullscreen toggle */}
             <button
               onClick={toggleFullscreen}
-              className="p-2 hover:bg-white/15 rounded-lg text-white transition-colors"
+              className="p-1.5 sm:p-2 hover:bg-white/15 rounded-lg text-white transition-colors"
               title={isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'}
             >
-              {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+              {isFullscreen ? <Minimize className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />}
             </button>
           </div>
         </div>
@@ -981,7 +1267,7 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
           <div className="bg-bdstream-card border border-bdstream-border max-w-md w-full rounded-xl p-5 shadow-2xl text-xs text-gray-200">
             <div className="flex items-center justify-between pb-3 border-b border-gray-700 mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-vlc-orange rounded-sm" />
+                <div className="w-3 h-3 bg-[#d4ff00] rounded-sm" />
                 <h4 className="font-bold text-sm text-white">VLC Media Information</h4>
               </div>
               <button
@@ -999,7 +1285,7 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
               </div>
               <div className="flex justify-between py-1 border-b border-gray-800">
                 <span className="text-gray-400">Media Source:</span>
-                <span className="text-vlc-orange uppercase">{playback.source}</span>
+                <span className="text-[#d4ff00] uppercase font-bold">{playback.source}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-800">
                 <span className="text-gray-400">Resolution:</span>
@@ -1036,7 +1322,7 @@ export const VlcPlayer: React.FC<VlcPlayerProps> = ({
             <div className="mt-4 pt-3 border-t border-gray-700 flex justify-end">
               <button
                 onClick={() => setShowStatsModal(false)}
-                className="px-4 py-1.5 bg-vlc-orange text-white rounded font-medium hover:bg-vlc-darkOrange transition-colors"
+                className="px-4 py-1.5 bg-[#d4ff00] hover:bg-[#c4ec00] text-black font-extrabold rounded-full transition-colors shadow-md"
               >
                 Close
               </button>

@@ -8,7 +8,7 @@ export const playbackRouter = Router();
 function inferMimeType(url: string, upstreamType?: string | null): string {
   const lower = url.toLowerCase();
   if (lower.endsWith('.mp4') || lower.endsWith('.m4v')) return 'video/mp4';
-  if (lower.endsWith('.mkv')) return 'video/x-matroska';
+  if (lower.endsWith('.mkv')) return 'video/webm';
   if (lower.endsWith('.webm')) return 'video/webm';
   if (lower.endsWith('.ts')) return 'video/mp2t';
   if (lower.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl';
@@ -27,7 +27,7 @@ function inferMimeType(url: string, upstreamType?: string | null): string {
 // GET /api/playback/resolve/:id - Resolve playable descriptor
 playbackRouter.get('/resolve/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const versionId = req.query.versionId as string | undefined;
     const descriptor = await registry.resolvePlayback(id, versionId);
     res.json({

@@ -117,13 +117,13 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({
   };
 
   return (
-    <div className="pb-16">
+    <div className="pb-6 sm:pb-8">
       <div className="mb-4">
-        <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
-          {category ? category : mediaType === 'series' ? 'TV & Web Series' : 'DhakaFlix Media Catalog'}
+        <h1 className="text-xl sm:text-2xl font-extrabold text-neutral-900 tracking-tight">
+          {category ? category : mediaType === 'series' ? 'TV & Web Series' : 'BDStream Unified Media Catalog'}
         </h1>
-        <p className="text-xs text-gray-400 mt-0.5">
-          Organized by categories, release years, and titles
+        <p className="text-xs text-neutral-500 mt-0.5">
+          Indexed from DhakaFlix, CinePlex BD & BAS Play (10.20.30.40)
         </p>
       </div>
 
