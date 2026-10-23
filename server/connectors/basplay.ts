@@ -4,7 +4,8 @@ import {
   PlaybackDescriptor,
   SourceHealth,
   CatalogQueryOptions,
-  SubtitleTrack
+  SubtitleTrack,
+  MediaVersion
 } from './types.js';
 import { validateMediaUrl } from '../security/ssrfGuard.js';
 
